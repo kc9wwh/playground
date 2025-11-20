@@ -66,35 +66,92 @@ ensure_root() {
 # find_active_session
 #
 # Finds the active graphical user session using loginctl.
+# Uses loginctl show-session to get structured properties instead of parsing
+# text output, which varies across systemd versions.
+#
+# Priority order for finding sessions:
+#   1. Active wayland/x11 session with a physical seat
+#   2. Any active wayland/x11 session
+#   3. Active TTY session with a physical seat (fallback for some desktop configs)
+#
 # Sets global variables: SESSION_ID, SESSION_USER, SESSION_UID
 #
 # Returns: 0 on success, 1 on failure
 ################################################################################
 find_active_session() {
     local session_id
+    local session_type
+    local session_state
+    local session_seat
 
     debug_log "Searching for active graphical session..."
 
-    # Try to find a graphical/user session with a seat (physical display)
-    # Look for 'graphical' or 'user' class with seat0
-    session_id=$(loginctl list-sessions --no-legend | awk '/seat0/ && (/graphical/ || /user/) {print $1; exit}')
+    # Get all session IDs
+    local all_sessions=$(loginctl list-sessions --no-legend | awk '{print $1}')
 
-    # If no seat0 session found, try any graphical session
-    if [[ -z "$session_id" ]]; then
-        debug_log "No seat0 session found, trying any graphical session..."
-        session_id=$(loginctl list-sessions --no-legend | awk '/graphical/ {print $1; exit}')
-    fi
-
-    # If still nothing, try any user session (not manager)
-    if [[ -z "$session_id" ]]; then
-        debug_log "No graphical session found, trying any user session..."
-        session_id=$(loginctl list-sessions --no-legend | awk '/user/ && !/manager/ {print $1; exit}')
-    fi
-
-    if [[ -z "$session_id" ]]; then
-        error_log "Could not find an active user session."
-        error_log "Available sessions:"
+    if [[ -z "$all_sessions" ]]; then
+        error_log "No sessions found."
         loginctl list-sessions >&2
+        return 1
+    fi
+
+    # Iterate through sessions and find the best match
+    # Priority: active graphical session with a seat
+    for sid in $all_sessions; do
+        session_type=$(loginctl show-session "$sid" -p Type --value 2>/dev/null)
+        session_state=$(loginctl show-session "$sid" -p State --value 2>/dev/null)
+        session_seat=$(loginctl show-session "$sid" -p Seat --value 2>/dev/null)
+
+        debug_log "Session $sid: Type=$session_type, State=$session_state, Seat=$session_seat"
+
+        # Look for active graphical sessions (X11 or Wayland) with a seat
+        if [[ "$session_state" == "active" && -n "$session_seat" ]]; then
+            if [[ "$session_type" == "wayland" || "$session_type" == "x11" ]]; then
+                session_id="$sid"
+                debug_log "Found graphical session with seat: $session_id"
+                break
+            fi
+        fi
+    done
+
+    # Fallback: any active graphical session (even without seat)
+    if [[ -z "$session_id" ]]; then
+        for sid in $all_sessions; do
+            session_type=$(loginctl show-session "$sid" -p Type --value 2>/dev/null)
+            session_state=$(loginctl show-session "$sid" -p State --value 2>/dev/null)
+
+            if [[ "$session_state" == "active" ]]; then
+                if [[ "$session_type" == "wayland" || "$session_type" == "x11" ]]; then
+                    session_id="$sid"
+                    debug_log "Found active graphical session: $session_id"
+                    break
+                fi
+            fi
+        done
+    fi
+
+    # Fallback: any session with a TTY and seat (like tty2)
+    if [[ -z "$session_id" ]]; then
+        for sid in $all_sessions; do
+            session_type=$(loginctl show-session "$sid" -p Type --value 2>/dev/null)
+            session_state=$(loginctl show-session "$sid" -p State --value 2>/dev/null)
+            session_seat=$(loginctl show-session "$sid" -p Seat --value 2>/dev/null)
+
+            if [[ "$session_state" == "active" && -n "$session_seat" && "$session_type" == "tty" ]]; then
+                session_id="$sid"
+                debug_log "Found active TTY session with seat: $session_id"
+                break
+            fi
+        done
+    fi
+
+    if [[ -z "$session_id" ]]; then
+        error_log "Could not find a suitable active session."
+        error_log "Available sessions:"
+        for sid in $all_sessions; do
+            loginctl show-session "$sid" -p Id -p Type -p State -p Seat -p User -p Name >&2
+            echo "---" >&2
+        done
         return 1
     fi
 
@@ -191,6 +248,7 @@ get_display_environment() {
 #
 # Runs a command as the active session user WITHOUT graphical environment.
 # Use this for background tasks, file operations, or non-GUI commands.
+# Uses su without login shell to preserve environment (important for snap apps).
 #
 # Arguments:
 #   $1 - Command to execute (required)
@@ -215,7 +273,8 @@ run_as_session_user() {
 
     info_log "Executing as $SESSION_USER (no GUI): $command"
 
-    su - "$SESSION_USER" -c "$command"
+    # Use su without '-' to avoid resetting to home directory
+    su "$SESSION_USER" -c "$command"
     return $?
 }
 
@@ -224,6 +283,10 @@ run_as_session_user() {
 #
 # Runs a command as the active session user WITH full graphical environment.
 # Use this for GUI applications, notifications, or display-dependent commands.
+#
+# Exports display environment variables before switching users to ensure
+# snap applications and confined apps work correctly. Uses su without login
+# shell (-) to preserve snap paths and confinement context.
 #
 # Arguments:
 #   $1 - Command to execute (required)
@@ -254,8 +317,21 @@ run_as_graphical_user() {
 
     info_log "Executing as $SESSION_USER (with GUI): $command"
 
-    su - "$SESSION_USER" -c "DISPLAY='$DISPLAY_VAR' WAYLAND_DISPLAY='$WAYLAND_DISPLAY_VAR' XAUTHORITY='$XAUTHORITY_VAR' DBUS_SESSION_BUS_ADDRESS='$DBUS_ADDRESS_VAR' XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR_VAR' $command"
-    return $?
+    # Use su without '-' to preserve environment better for snap applications
+    # Export variables explicitly instead of passing them in the command string
+    export DISPLAY="$DISPLAY_VAR"
+    export WAYLAND_DISPLAY="$WAYLAND_DISPLAY_VAR"
+    export XAUTHORITY="$XAUTHORITY_VAR"
+    export DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDRESS_VAR"
+    export XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR_VAR"
+
+    su "$SESSION_USER" -c "$command"
+    local exit_code=$?
+
+    # Unset exported variables to avoid polluting root environment
+    unset DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR
+
+    return $exit_code
 }
 
 ################################################################################
