@@ -79,9 +79,10 @@ try {
         try {
             [xml]$mdmContent = Get-Content $mdmXmlPath
 
-            # Parse the plist-style XML structure
-            $keys = $mdmContent.dict.key
-            $values = $mdmContent.dict.string
+            # Parse the plist-style XML structure - handle both single and multiple key/value pairs
+            $dictNode = $mdmContent.dict
+            $keys = @($dictNode.key)  # Force array
+            $values = @($dictNode.string)  # Force array
 
             # Find the organization key and its corresponding value
             $orgIndex = -1
@@ -104,6 +105,13 @@ try {
             }
         } catch {
             Write-Log "WARNING: Could not parse mdm.xml: $($_.Exception.Message)"
+            # Try to output the raw content for debugging
+            try {
+                $rawContent = Get-Content $mdmXmlPath -Raw
+                Write-Log "mdm.xml content: $rawContent"
+            } catch {
+                Write-Log "Could not read raw mdm.xml content"
+            }
         }
     } else {
         Write-Log "WARNING: mdm.xml not found at $mdmXmlPath"
