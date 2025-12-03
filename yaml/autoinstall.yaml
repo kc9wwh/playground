@@ -1,0 +1,419 @@
+#cloud-config
+# Ubuntu Autoinstall Configuration Template
+# This template installs Fleet agent (fleetd), configures a local admin user,
+# and sets up LUKS encryption with password OR TPM support
+#
+# Compatible with: Ubuntu 24.04 LTS (Noble), Ubuntu 24.10, Ubuntu 25.04
+# Documentation: https://canonical-subiquity.readthedocs-hosted.com/en/latest/reference/autoinstall-reference.html
+# Fleet Documentation: https://fleetdm.com/docs
+#
+# IMPORTANT: This uses autoinstall schema version 1 which enforces strict validation.
+# Unrecognized keys will cause fatal errors (introduced in Ubuntu 24.04).
+
+autoinstall:
+  version: 1
+
+  # ============================================================================
+  # STORAGE CONFIGURATION - LUKS ENCRYPTION
+  # ============================================================================
+  # Choose ONE of the following storage configurations:
+
+  # OPTION 1: LUKS with Password (Uncomment to use)
+  storage:
+    layout:
+      name: lvm
+      # Set your LUKS passphrase here
+      password: "ChangeThisSecurePassword123!"
+      sizing-policy: all
+
+  # OPTION 2: LUKS with TPM (Hybrid) - Comment out the above and uncomment below
+  # storage:
+  #   layout:
+  #     name: hybrid
+  #     encrypted: yes
+  #     # The hybrid layout automatically uses TPM 2.0 for the first key slot
+  #     # and sets up a recovery password for the second key slot
+
+  # OPTION 3: Advanced Custom Storage with Manual LUKS Setup
+  # Uncomment and customize if you need more control
+  # storage:
+  #   config:
+  #     - type: disk
+  #       id: disk0
+  #       ptable: gpt
+  #       wipe: superblock
+  #       preserve: false
+  #       grub_device: true
+  #     - type: partition
+  #       id: partition-esp
+  #       device: disk0
+  #       size: 512M
+  #       flag: boot
+  #     - type: partition
+  #       id: partition-boot
+  #       device: disk0
+  #       size: 1G
+  #     - type: partition
+  #       id: partition-root
+  #       device: disk0
+  #       size: -1
+  #     - type: dm_crypt
+  #       id: dmcrypt0
+  #       volume: partition-root
+  #       key: "ChangeThisSecurePassword123!"
+  #     - type: lvm_volgroup
+  #       id: vg0
+  #       name: ubuntu-vg
+  #       devices:
+  #         - dmcrypt0
+  #     - type: lvm_partition
+  #       id: lv-root
+  #       volgroup: vg0
+  #       name: root
+  #       size: -1
+  #     - type: format
+  #       id: format-esp
+  #       volume: partition-esp
+  #       fstype: fat32
+  #     - type: format
+  #       id: format-boot
+  #       volume: partition-boot
+  #       fstype: ext4
+  #     - type: format
+  #       id: format-root
+  #       volume: lv-root
+  #       fstype: ext4
+  #     - type: mount
+  #       id: mount-esp
+  #       device: format-esp
+  #       path: /boot/efi
+  #     - type: mount
+  #       id: mount-boot
+  #       device: format-boot
+  #       path: /boot
+  #     - type: mount
+  #       id: mount-root
+  #       device: format-root
+  #       path: /
+
+  # ============================================================================
+  # IDENTITY - Local Admin User Configuration
+  # ============================================================================
+  # Creates user during installation (before first boot)
+  # Note: If user-data section below creates users, identity becomes optional
+  identity:
+    realname: "Local Administrator"
+    username: ladmin
+    # Password: "FleetAdmin123!" (generate your own with: mkpasswd -m sha-512)
+    # To generate a new password hash, run: mkpasswd -m sha-512
+    password: "$6$rounds=4096$saltsaltssalt$JqmJslBnqxRG3yXx1lXJNzVQfKGjqW8Q8xwD1FqmKl.jJXN.L6A8VfXcLLqJ9PNKsQNX.jX5L5KjQXLl9KjX1."
+    hostname: ubuntu-host
+
+  # ============================================================================
+  # USER-DATA - Cloud-init Configuration
+  # ============================================================================
+  # This section configures additional users and system settings on first boot
+  # Uses cloud-init format: https://cloudinit.readthedocs.io/
+  user-data:
+    users:
+      # Primary admin user (also defined in identity above)
+      - name: ladmin
+        gecos: "Local Administrator"
+        # Same password as above
+        passwd: "$6$rounds=4096$saltsaltssalt$JqmJslBnqxRG3yXx1lXJNzVQfKGjqW8Q8xwD1FqmKl.jJXN.L6A8VfXcLLqJ9PNKsQNX.jX5L5KjQXLl9KjX1."
+        groups: adm, cdrom, dip, lxd, plugdev, sudo
+        shell: /bin/bash
+        lock_passwd: false
+        ssh_authorized_keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC... # Add your SSH public key here
+
+      # Optional: Additional admin user
+      # - name: backup-admin
+      #   gecos: 'Backup Administrator'
+      #   passwd: '$6$...'
+      #   groups: sudo
+      #   shell: /bin/bash
+      #   lock_passwd: false
+
+    # Disable password authentication for SSH (optional - recommended for security)
+    # ssh:
+    #   disable_root: true
+    #   password_authentication: false
+
+  # ============================================================================
+  # NETWORK CONFIGURATION
+  # ============================================================================
+  network:
+    version: 2
+    ethernets:
+      # Use DHCP for primary interface
+      ens3:
+        dhcp4: true
+        dhcp6: false
+
+  # Static IP configuration example (uncomment and customize if needed)
+  # Ubuntu 24.04+ uses the newer routes syntax instead of deprecated gateway4
+  # network:
+  #   version: 2
+  #   ethernets:
+  #     ens3:
+  #       addresses:
+  #         - 192.168.1.100/24
+  #       routes:
+  #         - to: default
+  #           via: 192.168.1.1
+  #       nameservers:
+  #         addresses:
+  #           - 8.8.8.8
+  #           - 8.8.4.4
+  #
+  # Legacy syntax (Ubuntu 22.04 and earlier - still works but deprecated):
+  # network:
+  #   version: 2
+  #   ethernets:
+  #     ens3:
+  #       addresses:
+  #         - 192.168.1.100/24
+  #       gateway4: 192.168.1.1  # Deprecated in 24.04+
+  #       nameservers:
+  #         addresses:
+  #           - 8.8.8.8
+  #           - 8.8.4.4
+
+  # ============================================================================
+  # LOCALIZATION
+  # ============================================================================
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  timezone: America/New_York # Change to your timezone
+
+  # ============================================================================
+  # SSH SERVER
+  # ============================================================================
+  ssh:
+    install-server: true
+    allow-pw: true # Set to false after SSH keys are configured
+    authorized-keys: [] # Add SSH keys here if needed
+
+  # ============================================================================
+  # PACKAGES TO INSTALL
+  # ============================================================================
+  packages:
+    - curl
+    - wget
+    - vim
+    - git
+    - htop
+    - net-tools
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - apt-transport-https
+    - software-properties-common
+
+  # ============================================================================
+  # UPDATES AND UPGRADES
+  # ============================================================================
+  updates: security # Install security updates during installation
+
+  # ============================================================================
+  # EARLY COMMANDS
+  # ============================================================================
+  # Commands run before installation begins
+  early-commands:
+    - echo "Starting Ubuntu autoinstall with Fleet agent deployment..."
+
+  # ============================================================================
+  # LATE COMMANDS - Fleet Agent Installation
+  # ============================================================================
+  # These commands run after installation completes, before first boot
+  late-commands:
+    # Update package lists
+    - curtin in-target -- apt-get update
+
+    # Install additional dependencies
+    - curtin in-target -- apt-get install -y curl wget ca-certificates
+
+    # -------------------------------------------------------------------------
+    # FLEET AGENT (fleetd) INSTALLATION
+    # -------------------------------------------------------------------------
+    # IMPORTANT: As a Fleet Administrator, you should:
+    # 1. Generate the fleetd package using: fleetctl package --type=deb
+    # 2. Host the .deb package on an internal web server, file share, or package repository
+    # 3. Update the FLEETD_PACKAGE_URL below to point to your hosted package
+
+    # Download pre-built fleetd package from your internal repository
+    - curtin in-target -- bash -c 'wget -O /tmp/fleetd.deb "https://packages.example.com/fleet/fleetd_latest_amd64.deb"'
+
+    # Install the fleetd package
+    - curtin in-target -- bash -c 'dpkg -i /tmp/fleetd.deb || apt-get install -f -y'
+
+    # Enable and start the fleetd service
+    - curtin in-target -- systemctl enable fleetd
+    - curtin in-target -- systemctl start fleetd
+
+    # -------------------------------------------------------------------------
+    # ALTERNATIVE INSTALLATION METHODS
+    # -------------------------------------------------------------------------
+
+    # Method 2: Install from local network file share (SMB/NFS)
+    # Uncomment if package is hosted on a network share
+    # - curtin in-target -- apt-get install -y cifs-utils
+    # - curtin in-target -- bash -c 'mount -t cifs //fileserver/packages /mnt -o username=installer,password=PASS'
+    # - curtin in-target -- bash -c 'dpkg -i /mnt/fleet/fleetd_latest_amd64.deb || apt-get install -f -y'
+    # - curtin in-target -- umount /mnt
+
+    # Method 3: Install from internal package repository (APT)
+    # Uncomment and configure if you have an internal APT repository
+    # - curtin in-target -- bash -c 'wget -O /etc/apt/trusted.gpg.d/fleet.asc https://packages.example.com/fleet/gpg'
+    # - curtin in-target -- bash -c 'echo "deb [signed-by=/etc/apt/trusted.gpg.d/fleet.asc] https://packages.example.com/fleet/apt stable main" > /etc/apt/sources.list.d/fleet.list'
+    # - curtin in-target -- apt-get update
+    # - curtin in-target -- apt-get install -y fleetd
+
+    # Method 4: Download from Fleet server's package endpoint
+    # Note: This requires a valid API token
+    # - curtin in-target -- bash -c 'wget -O /tmp/fleetd.deb "https://fleet.example.com/api/latest/fleet/download/installer/deb?enroll_secret=YOUR_SECRET&token=YOUR_TOKEN"'
+    # - curtin in-target -- bash -c 'dpkg -i /tmp/fleetd.deb || apt-get install -f -y'
+
+    # -------------------------------------------------------------------------
+    # POST-INSTALLATION CONFIGURATION
+    # -------------------------------------------------------------------------
+
+    # Configure automatic security updates (optional)
+    - curtin in-target -- apt-get install -y unattended-upgrades
+    - curtin in-target -- dpkg-reconfigure -plow unattended-upgrades
+
+    # Create a flag file to indicate successful installation
+    - curtin in-target -- bash -c 'echo "Fleet agent (fleetd) installed on $(date)" > /etc/fleet-install-complete'
+
+    # Set proper permissions
+    - curtin in-target -- chmod 644 /etc/fleet-install-complete
+
+    # Configure firewall (optional - adjust as needed)
+    # - curtin in-target -- apt-get install -y ufw
+    # - curtin in-target -- ufw allow 22/tcp
+    # - curtin in-target -- ufw --force enable
+
+    # Verify fleetd installation and log details
+    - curtin in-target -- bash -c 'echo "Autoinstall completed at $(date)" >> /var/log/autoinstall.log'
+    - curtin in-target -- bash -c 'systemctl status fleetd >> /var/log/autoinstall.log 2>&1 || echo "fleetd service check failed" >> /var/log/autoinstall.log'
+    - curtin in-target -- bash -c 'ls -la /opt/orbit/ >> /var/log/autoinstall.log 2>&1 || echo "Orbit directory not found" >> /var/log/autoinstall.log'
+
+    # Cleanup
+    - curtin in-target -- rm -f /tmp/fleetd.deb
+
+  # ============================================================================
+  # SHUTDOWN BEHAVIOR
+  # ============================================================================
+  shutdown: reboot # Options: reboot, poweroff
+
+  # ============================================================================
+  # ERROR HANDLING AND REPORTING
+  # ============================================================================
+  error-commands:
+    - echo "Installation failed! Check /var/log/installer/ for details"
+
+  reporting:
+    builtin:
+      type: print
+# ==============================================================================
+# NOTES AND USAGE INSTRUCTIONS
+# ==============================================================================
+#
+# 1. PASSWORD GENERATION:
+#    Generate a secure password hash using:
+#    mkpasswd -m sha-512 "YourPasswordHere"
+#
+#    Or on Ubuntu/Debian:
+#    python3 -c 'import crypt; print(crypt.crypt("YourPasswordHere", crypt.mksalt(crypt.METHOD_SHA512)))'
+#
+# 2. FLEET AGENT PACKAGE PREPARATION (IMPORTANT):
+#    As a Fleet Administrator, you need to prepare the fleetd package BEFORE deployment:
+#
+#    a. Generate the package using fleetctl:
+#       fleetctl package --type=deb \
+#         --fleet-url=https://fleet.example.com \
+#         --enroll-secret=your-secret-here \
+#         --fleet-desktop
+#
+#    b. Host the generated .deb package on an accessible location:
+#       - Internal web server (nginx, apache)
+#       - File share (SMB/NFS)
+#       - Internal package repository (APT repo)
+#       - Cloud storage with private access
+#
+#    c. Update the autoinstall.yaml with your package URL:
+#       - Replace "https://packages.example.com/fleet/fleetd_latest_amd64.deb"
+#       - Ensure the URL is accessible from the installing host's network
+#
+#    d. Optional: Generate different packages for different teams or environments
+#       - Development: fleetctl package --type=deb --fleet-url=... --enroll-secret=dev-secret
+#       - Production: fleetctl package --type=deb --fleet-url=... --enroll-secret=prod-secret
+#
+# 3. LUKS ENCRYPTION OPTIONS:
+#    - Password-based: Uses a static passphrase (stored in this file - use secure distribution methods)
+#    - TPM-based: Uses TPM 2.0 hardware to unlock automatically on boot
+#    - Hybrid: Combines both methods - TPM for automatic unlock, password for recovery
+#
+# 4. DEPLOYMENT:
+#    To use this autoinstall configuration:
+#    a. Create a bootable USB with Ubuntu Server ISO
+#    b. Add this autoinstall.yaml to the root of the ISO or provide it via kernel parameters
+#    c. Boot the system with the autoinstall parameter:
+#       autoinstall ds=nocloud-net;s=http://your-server/path/to/config/
+#
+# 5. TESTING:
+#    Test in a VM first:
+#    - Use VirtualBox, VMware, or KVM/QEMU
+#    - Verify encryption, user creation, and Fleet agent enrollment
+#    - Check logs in /var/log/installer/ and /var/log/autoinstall.log
+#
+# 6. SECURITY RECOMMENDATIONS:
+#    - Change default passwords immediately
+#    - Use SSH keys instead of passwords
+#    - Enable firewall (ufw)
+#    - Configure automatic security updates
+#    - Rotate Fleet enrollment secrets regularly
+#    - Store LUKS recovery passwords securely (e.g., password manager, secure vault)
+#    - Don't embed sensitive credentials in autoinstall.yaml - use secure key management
+#
+# 7. TPM SETUP:
+#    For TPM-based encryption:
+#    - Ensure TPM 2.0 is enabled in BIOS/UEFI
+#    - Use the 'hybrid' storage layout
+#    - The system will automatically enroll TPM during installation
+#    - A recovery password will be generated and displayed during installation
+#    - SAVE THE RECOVERY PASSWORD SECURELY!
+#
+# 8. FLEET AGENT VERIFICATION:
+#    After installation and reboot:
+#    - Check service status: sudo systemctl status fleetd
+#    - View logs: sudo journalctl -u fleetd
+#    - Verify enrollment in Fleet UI: Hosts page
+#    - Check Orbit directory: ls -la /opt/orbit/
+#
+# 9. PACKAGE HOSTING EXAMPLES:
+#
+#    Simple HTTP server (Python):
+#      python3 -m http.server 8000 --directory /path/to/packages
+#
+#    Nginx configuration:
+#      server {
+#        listen 80;
+#        server_name packages.example.com;
+#        root /var/www/packages;
+#        autoindex on;
+#        location /fleet/ {
+#          alias /var/www/packages/fleet/;
+#        }
+#      }
+#
+#    SMB share (Samba):
+#      [packages]
+#      path = /srv/packages
+#      read only = yes
+#      guest ok = no
+#      valid users = installer
+#
+# ==============================================================================
