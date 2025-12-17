@@ -9,7 +9,12 @@ $ErrorActionPreference = "Stop"
 $downloadUrl = "https://downloads.cloudflareclient.com/v1/download/windows/ga"
 $tempDir = $env:TEMP
 $installerPath = Join-Path $tempDir "Cloudflare_WARP.msi"
-$organization = "your-team-name"  # Replace with your Cloudflare Zero Trust organization name
+$organization = "your-team-name"   # Replace with your Cloudflare Zero Trust organization name
+$serviceMode = "1dot1"             # Gateway with DoH mode (options: warp, 1dot1, proxy, postureonly, tunnelonly)
+$autoConnect = 2                   # Auto-reconnect after N minutes (0 = indefinite off, 1-1440 = minutes)
+$displayName = "display-name"      # Organization display name in WARP GUI
+$onboarding = $false               # Show privacy policy screens on first launch
+$switchLocked = $true              # Prevent users from manually disabling WARP
 
 # Function to write log messages
 function Write-Log {
@@ -43,13 +48,17 @@ try {
     $fileSize = (Get-Item $installerPath).Length / 1MB
     Write-Log "Download complete. File size: $([math]::Round($fileSize, 2)) MB"
 
-    # Install silently
+    # Install silently with MSI parameters
     Write-Log "Starting silent installation with organization: $organization"
+    Write-Log "Installing with MSI parameters: ORGANIZATION, SERVICE_MODE, ONBOARDING, SWITCH_LOCKED"
     $arguments = @(
         "/i"
         "`"$installerPath`""
         "/qn"
         "ORGANIZATION=`"$organization`""
+        "SERVICE_MODE=`"$serviceMode`""
+        "ONBOARDING=$($onboarding.ToString().ToUpper())"
+        "SWITCH_LOCKED=$($switchLocked.ToString().ToUpper())"
         "/norestart"
         "/L*V"
         "`"$tempDir\CloudflareWARP_install.log`""
@@ -68,44 +77,218 @@ try {
         exit $process.ExitCode
     }
 
-    # Verify organization configuration
-    Write-Log "Verifying organization configuration..."
+    # Update MDM configuration with additional parameters
+    Write-Log "Updating MDM configuration file with additional parameters..."
     $mdmXmlPath = "C:\ProgramData\Cloudflare\mdm.xml"
 
-    # Wait a moment for the file to be created
-    Start-Sleep -Seconds 2
+    # Wait for the MSI to create the initial mdm.xml file
+    Start-Sleep -Seconds 3
+
+    try {
+        if (Test-Path $mdmXmlPath) {
+            # Read and parse existing mdm.xml
+            [xml]$mdmContent = Get-Content $mdmXmlPath
+            $dictNode = $mdmContent.dict
+
+            # Create new elements for auto_connect
+            $autoConnectKey = $mdmContent.CreateElement("key")
+            $autoConnectKey.InnerText = "auto_connect"
+            $autoConnectValue = $mdmContent.CreateElement("integer")
+            $autoConnectValue.InnerText = $autoConnect.ToString()
+
+            # Create new elements for display_name
+            $displayNameKey = $mdmContent.CreateElement("key")
+            $displayNameKey.InnerText = "display_name"
+            $displayNameValue = $mdmContent.CreateElement("string")
+            $displayNameValue.InnerText = $displayName
+
+            # Append new elements to the dict node
+            $dictNode.AppendChild($autoConnectKey) | Out-Null
+            $dictNode.AppendChild($autoConnectValue) | Out-Null
+            $dictNode.AppendChild($displayNameKey) | Out-Null
+            $dictNode.AppendChild($displayNameValue) | Out-Null
+
+            # Save the updated XML
+            $mdmContent.Save($mdmXmlPath)
+            Write-Log "Added auto_connect and display_name to mdm.xml"
+            Write-Log "MDM configuration updated successfully at $mdmXmlPath"
+        } else {
+            # If mdm.xml doesn't exist, create a complete one
+            Write-Log "mdm.xml not found, creating new configuration file..."
+            $xmlContent = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>organization</key>
+    <string>$organization</string>
+    <key>service_mode</key>
+    <string>$serviceMode</string>
+    <key>onboarding</key>
+    <$(if ($onboarding) { "true" } else { "false" })/>
+    <key>switch_locked</key>
+    <$(if ($switchLocked) { "true" } else { "false" })/>
+    <key>auto_connect</key>
+    <integer>$autoConnect</integer>
+    <key>display_name</key>
+    <string>$displayName</string>
+</dict>
+</plist>
+"@
+            # Ensure directory exists
+            $mdmDir = Split-Path $mdmXmlPath -Parent
+            if (-not (Test-Path $mdmDir)) {
+                New-Item -ItemType Directory -Path $mdmDir -Force | Out-Null
+            }
+
+            # Write the XML file
+            $xmlContent | Out-File -FilePath $mdmXmlPath -Encoding UTF8 -Force
+            Write-Log "MDM configuration created successfully at $mdmXmlPath"
+        }
+    } catch {
+        Write-Log "ERROR: Failed to update mdm.xml: $($_.Exception.Message)"
+        Write-Log "WARP is installed but additional parameters (auto_connect, display_name) were not configured"
+    }
+
+    # Verify MDM configuration
+    Write-Log "Verifying MDM configuration parameters..."
+
+    # Define expected values upfront for use in catch block
+    $expectedOnboarding = if ($onboarding) { "true" } else { "false" }
+    $expectedSwitchLocked = if ($switchLocked) { "true" } else { "false" }
 
     if (Test-Path $mdmXmlPath) {
         try {
             [xml]$mdmContent = Get-Content $mdmXmlPath
-
-            # Parse the plist-style XML structure - handle both single and multiple key/value pairs
             $dictNode = $mdmContent.dict
-            $keys = @($dictNode.key)  # Force array
-            $values = @($dictNode.string)  # Force array
 
-            # Find the organization key and its corresponding value
-            $orgIndex = -1
+            # Build parameter lookup table
+            $params = @{}
+            $keys = @($dictNode.key)
+            $allValues = $dictNode.ChildNodes | Where-Object { $_.Name -ne "key" }
+
             for ($i = 0; $i -lt $keys.Count; $i++) {
-                if ($keys[$i] -eq "organization") {
-                    $orgIndex = $i
-                    break
+                $keyName = $keys[$i]
+                # Find the next non-key element after this key
+                $valueIndex = 0
+                $keysSoFar = 0
+                foreach ($node in $dictNode.ChildNodes) {
+                    if ($node.Name -eq "key") {
+                        if ($keysSoFar -eq $i) {
+                            # Found our key, next non-key node is the value
+                            foreach ($nextNode in $dictNode.ChildNodes) {
+                                if ($nextNode -eq $node) {
+                                    continue
+                                }
+                                $currentIndex = [array]::IndexOf($dictNode.ChildNodes, $nextNode)
+                                $keyIndex = [array]::IndexOf($dictNode.ChildNodes, $node)
+                                if ($currentIndex -gt $keyIndex -and $nextNode.Name -ne "key") {
+                                    if ($nextNode.Name -eq "true") {
+                                        $params[$keyName] = "true"
+                                    } elseif ($nextNode.Name -eq "false") {
+                                        $params[$keyName] = "false"
+                                    } else {
+                                        $params[$keyName] = $nextNode.InnerText
+                                    }
+                                    break
+                                }
+                            }
+                            break
+                        }
+                        $keysSoFar++
+                    }
                 }
             }
 
-            if ($orgIndex -ge 0 -and $orgIndex -lt $values.Count) {
-                $configuredOrg = $values[$orgIndex]
-                if ($configuredOrg -eq $organization) {
-                    Write-Log "SUCCESS: Organization verified as '$configuredOrg'"
+            # Verify each parameter
+            $allVerified = $true
+
+            # Check organization
+            if ($params.ContainsKey("organization")) {
+                if ($params["organization"] -eq $organization) {
+                    Write-Log "  ✓ organization: '$($params["organization"])'"
                 } else {
-                    Write-Log "WARNING: Organization mismatch. Expected '$organization' but found '$configuredOrg'"
+                    Write-Log "  ✗ organization: Expected '$organization', found '$($params["organization"])'"
+                    $allVerified = $false
                 }
             } else {
-                Write-Log "WARNING: Organization key not found in mdm.xml"
+                Write-Log "  ✗ organization: Not found in mdm.xml"
+                $allVerified = $false
             }
+
+            # Check service_mode
+            if ($params.ContainsKey("service_mode")) {
+                if ($params["service_mode"] -eq $serviceMode) {
+                    Write-Log "  ✓ service_mode: '$($params["service_mode"])'"
+                } else {
+                    Write-Log "  ✗ service_mode: Expected '$serviceMode', found '$($params["service_mode"])'"
+                    $allVerified = $false
+                }
+            } else {
+                Write-Log "  ✗ service_mode: Not found in mdm.xml"
+                $allVerified = $false
+            }
+
+            # Check onboarding
+            if ($params.ContainsKey("onboarding")) {
+                if ($params["onboarding"] -eq $expectedOnboarding) {
+                    Write-Log "  ✓ onboarding: $($params["onboarding"])"
+                } else {
+                    Write-Log "  ✗ onboarding: Expected '$expectedOnboarding', found '$($params["onboarding"])'"
+                    $allVerified = $false
+                }
+            } else {
+                Write-Log "  ✗ onboarding: Not found in mdm.xml"
+                $allVerified = $false
+            }
+
+            # Check switch_locked
+            if ($params.ContainsKey("switch_locked")) {
+                if ($params["switch_locked"] -eq $expectedSwitchLocked) {
+                    Write-Log "  ✓ switch_locked: $($params["switch_locked"])"
+                } else {
+                    Write-Log "  ✗ switch_locked: Expected '$expectedSwitchLocked', found '$($params["switch_locked"])'"
+                    $allVerified = $false
+                }
+            } else {
+                Write-Log "  ✗ switch_locked: Not found in mdm.xml"
+                $allVerified = $false
+            }
+
+            # Check auto_connect
+            if ($params.ContainsKey("auto_connect")) {
+                if ($params["auto_connect"] -eq $autoConnect.ToString()) {
+                    Write-Log "  ✓ auto_connect: $($params["auto_connect"])"
+                } else {
+                    Write-Log "  ✗ auto_connect: Expected '$autoConnect', found '$($params["auto_connect"])'"
+                    $allVerified = $false
+                }
+            } else {
+                Write-Log "  ✗ auto_connect: Not found in mdm.xml"
+                $allVerified = $false
+            }
+
+            # Check display_name
+            if ($params.ContainsKey("display_name")) {
+                if ($params["display_name"] -eq $displayName) {
+                    Write-Log "  ✓ display_name: '$($params["display_name"])'"
+                } else {
+                    Write-Log "  ✗ display_name: Expected '$displayName', found '$($params["display_name"])'"
+                    $allVerified = $false
+                }
+            } else {
+                Write-Log "  ✗ display_name: Not found in mdm.xml"
+                $allVerified = $false
+            }
+
+            if ($allVerified) {
+                Write-Log "SUCCESS: All MDM parameters verified successfully"
+            } else {
+                Write-Log "WARNING: Some MDM parameters could not be verified"
+            }
+
         } catch {
             Write-Log "WARNING: Could not parse mdm.xml: $($_.Exception.Message)"
-            # Try to output the raw content for debugging
             try {
                 $rawContent = Get-Content $mdmXmlPath -Raw
                 Write-Log "mdm.xml content: $rawContent"
