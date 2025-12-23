@@ -13,6 +13,11 @@ except ImportError:
     print("Dependencies installed. Please run the script again.\n")
     sys.exit(0)
 
+# Auto-update edge-tts to latest version
+subprocess.check_call(
+    [sys.executable, "-m", "pip", "install", "--upgrade", "edge-tts", "-q"]
+)
+
 # Microsoft Azure Neural Voice (Free via edge-tts)
 # Preview voices here: https://tts.travisvn.com/
 VOICE = "en-US-AvaMultilingualNeural"
