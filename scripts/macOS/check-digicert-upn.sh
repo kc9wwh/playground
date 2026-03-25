@@ -2,9 +2,9 @@
 
 # check-digicert-upn.sh
 #
-# Verifies that every DigiCert certificate in the macOS System keychain
-# has a UPN (Subject Alternative Name, OID 1.3.6.1.4.1.311.20.2.3)
-# whose prefix matches this host's hardware serial number.
+# Verifies that certificates in the macOS System keychain have a UPN
+# (Subject Alternative Name, OID 1.3.6.1.4.1.311.20.2.3) whose prefix
+# matches this host's hardware serial number.
 #
 # Background: Fleet issue #39324 — the DigiCert CA integration used a
 # non-unique variable reference for UPN substitution, so some hosts
@@ -12,11 +12,21 @@
 # Fixed in Fleet 4.83.
 #
 # Exit codes:
-#   0 — all DigiCert certificates with a UPN match this host's serial
+#   0 — all matching certificates with a UPN match this host's serial
 #   1 — at least one UPN mismatch detected
-#   2 — no DigiCert certificates with a UPN were found (nothing to check)
+#   2 — no matching certificates with a UPN were found (nothing to check)
 
 set -uo pipefail
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+# Issuer substring to filter certificates (case-insensitive).
+# Set this to match your CA's issuer field. Examples:
+#   "DigiCert"                              — default, matches most DigiCert CAs
+#   "FleetDM Integration Testing ECDSA ICA" — customer-specific ICA name
+#   ""                                      — empty string checks ALL certs with a UPN
+ISSUER_FILTER="DigiCert"
 
 # ---------------------------------------------------------------------------
 # Host serial
@@ -163,9 +173,11 @@ mismatches=0
 for cert_file in "$tmp_dir"/cert_*.pem; do
     [ -f "$cert_file" ] || continue
 
-    # Filter to DigiCert-issued certificates only
-    issuer=$(openssl x509 -in "$cert_file" -noout -issuer 2>/dev/null)
-    echo "$issuer" | grep -qi "DigiCert" || continue
+    # Filter by issuer if ISSUER_FILTER is set
+    if [ -n "$ISSUER_FILTER" ]; then
+        issuer=$(openssl x509 -in "$cert_file" -noout -issuer 2>/dev/null)
+        echo "$issuer" | grep -qi "$ISSUER_FILTER" || continue
+    fi
 
     # Gather display fields
     cn=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null \
@@ -215,15 +227,19 @@ echo "---"
 exit_code=0
 
 if [ "$total" -eq 0 ]; then
-    echo "No DigiCert certificates with a UPN found in System keychain."
+    if [ -n "$ISSUER_FILTER" ]; then
+        echo "No certificates matching issuer '${ISSUER_FILTER}' with a UPN found in System keychain."
+    else
+        echo "No certificates with a UPN found in System keychain."
+    fi
     echo "RESULT: NOTHING TO CHECK"
     exit_code=2
 elif [ "$mismatches" -gt 0 ]; then
-    echo "Summary: $total DigiCert cert(s) with UPN — $matches match, $mismatches mismatch"
+    echo "Summary: $total cert(s) with UPN — $matches match, $mismatches mismatch"
     echo "RESULT: FAIL — UPN mismatch detected (issue #39324 may still affect this host)"
     exit_code=1
 else
-    echo "Summary: $total DigiCert cert(s) with UPN — $matches match, $mismatches mismatch"
+    echo "Summary: $total cert(s) with UPN — $matches match, $mismatches mismatch"
     echo "RESULT: PASS — all UPNs match this host's serial"
 fi
 

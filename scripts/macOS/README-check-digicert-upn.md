@@ -4,15 +4,31 @@ Fleet issue #39324 caused some hosts to receive DigiCert certificates where
 the UPN (User Principal Name) in the Subject Alternative Name contained
 another host's hardware serial number. This was fixed in Fleet 4.83.
 
-This script verifies the fix by checking every DigiCert certificate in the
-macOS System keychain and comparing the UPN prefix to the host's own serial.
+This script verifies the fix by checking certificates in the macOS System
+keychain and comparing the UPN prefix to the host's own serial.
 
 ## What's included
 
 | File | Purpose |
 |------|---------|
 | `check-digicert-upn.sh` | Audit script — runs on each host |
-| `test-check-digicert-upn.sh` | Test harness (13 tests) |
+| `test-check-digicert-upn.sh` | Test harness (15 tests) |
+
+## Configuration
+
+Edit the `ISSUER_FILTER` variable at the top of `check-digicert-upn.sh`
+before deploying. This controls which certificates the script inspects.
+
+| Value | Behavior |
+|-------|----------|
+| `"DigiCert"` (default) | Only checks certs whose issuer contains "DigiCert" |
+| `"FleetDM Integration Testing ECDSA ICA"` | Matches a specific ICA/Business Unit name |
+| `""` (empty) | Checks ALL certs in the keychain that have a UPN |
+
+The issuer name on a DigiCert certificate comes from your DigiCert Business
+Unit / ICA configuration, not from Fleet. Check your cert's issuer field
+(`openssl x509 -in cert.pem -noout -issuer`) or your DigiCert portal to
+find the right value.
 
 ## Quick start (single host)
 
@@ -20,7 +36,7 @@ macOS System keychain and comparing the UPN prefix to the host's own serial.
 sudo bash check-digicert-upn.sh
 ```
 
-Output shows each DigiCert certificate's CN, expiry, UPN, and match status.
+Output shows each matching certificate's CN, expiry, UPN, and match status.
 Exit codes: `0` = all match, `1` = mismatch found, `2` = nothing to check.
 
 ## Mass audit across Fleet (10k+ hosts)
@@ -116,7 +132,7 @@ certs with UPN SANs and validates every code path. No root access required.
 bash test-check-digicert-upn.sh
 ```
 
-Expected output: `13 passed, 0 failed`.
+Expected output: `15 passed, 0 failed`.
 
 ## Compatibility
 

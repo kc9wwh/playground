@@ -181,10 +181,18 @@ PATCHED_SCRIPT="$tmp_dir/check-digicert-upn-test.sh"
 TEST_RESULT_DIR="$tmp_dir/var-fleet"
 TEST_RESULT_FILE="$TEST_RESULT_DIR/upn-check-result"
 
+# prepare_patched_script [issuer_filter]
+# Creates a patched copy with test keychain and result dir paths.
+# Optional argument overrides ISSUER_FILTER (default: keep "DigiCert").
 prepare_patched_script() {
+    local filter="${1-}"
     sed -e "s|/Library/Keychains/System.keychain|${TEST_KEYCHAIN}|g" \
         -e "s|/var/fleet|${TEST_RESULT_DIR}|g" \
         "$SCRIPT_UNDER_TEST" > "$PATCHED_SCRIPT"
+    # Override ISSUER_FILTER if an argument was passed (even if empty string)
+    if [ "$#" -ge 1 ]; then
+        sed -i '' "s|^ISSUER_FILTER=.*|ISSUER_FILTER=\"${filter}\"|" "$PATCHED_SCRIPT"
+    fi
     chmod +x "$PATCHED_SCRIPT"
 }
 
@@ -211,8 +219,9 @@ reset_keychain() {
 # Generate CA certificates (done once, reused across tests)
 # ===================================================================
 echo "Generating test CA certificates..."
-gen_ca "digicert" "DigiCert Inc"
-gen_ca "otherca"  "Some Other CA Inc"
+gen_ca "digicert"   "DigiCert Inc"
+gen_ca "otherca"    "Some Other CA Inc"
+gen_ca "customica"  "FleetDM Integration Testing ECDSA ICA"
 echo ""
 
 # Prepare the patched script
@@ -491,6 +500,53 @@ if [ -f "$TEST_RESULT_FILE" ]; then
 else
     log_fail "result file not created"
 fi
+echo ""
+
+# ===================================================================
+# TEST 14: Custom issuer filter matches non-DigiCert CA
+# ===================================================================
+echo "TEST 14: Custom ISSUER_FILTER matches custom ICA name"
+reset_keychain
+gen_leaf "t14-custom" "customica" "custom-ica-cert" "${HOST_SERIAL}@example.com"
+import_cert "$tmp_dir/t14-custom.pem"
+
+# Re-prepare with custom issuer filter
+prepare_patched_script "FleetDM Integration Testing"
+output=$(bash "$PATCHED_SCRIPT" 2>&1)
+rc=$?
+
+if [ "$rc" -eq 0 ] && echo "$output" | grep -q "MATCH" && echo "$output" | grep -q "RESULT: PASS"; then
+    log_pass "custom ISSUER_FILTER finds matching cert"
+else
+    log_fail "expected exit 0 with custom ISSUER_FILTER, got exit $rc"
+    echo "    output: $output"
+fi
+# Restore default patched script for remaining tests
+prepare_patched_script
+echo ""
+
+# ===================================================================
+# TEST 15: Empty issuer filter checks ALL certs with UPN
+# ===================================================================
+echo "TEST 15: Empty ISSUER_FILTER checks all certs regardless of issuer"
+reset_keychain
+# Use a non-DigiCert CA — would normally be skipped by default filter
+gen_leaf "t15-any" "otherca" "any-issuer-cert" "${HOST_SERIAL}@example.com"
+import_cert "$tmp_dir/t15-any.pem"
+
+# Re-prepare with empty issuer filter
+prepare_patched_script ""
+output=$(bash "$PATCHED_SCRIPT" 2>&1)
+rc=$?
+
+if [ "$rc" -eq 0 ] && echo "$output" | grep -q "MATCH" && echo "$output" | grep -q "RESULT: PASS"; then
+    log_pass "empty ISSUER_FILTER checks all certs"
+else
+    log_fail "expected exit 0 with empty ISSUER_FILTER, got exit $rc"
+    echo "    output: $output"
+fi
+# Restore default patched script
+prepare_patched_script
 echo ""
 
 # ===================================================================
