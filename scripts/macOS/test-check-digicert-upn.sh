@@ -177,8 +177,13 @@ import_cert() {
 # instead of the real System keychain.
 PATCHED_SCRIPT="$tmp_dir/check-digicert-upn-test.sh"
 
+# Result file location for policy integration tests
+TEST_RESULT_DIR="$tmp_dir/var-fleet"
+TEST_RESULT_FILE="$TEST_RESULT_DIR/upn-check-result"
+
 prepare_patched_script() {
-    sed "s|/Library/Keychains/System.keychain|${TEST_KEYCHAIN}|g" \
+    sed -e "s|/Library/Keychains/System.keychain|${TEST_KEYCHAIN}|g" \
+        -e "s|/var/fleet|${TEST_RESULT_DIR}|g" \
         "$SCRIPT_UNDER_TEST" > "$PATCHED_SCRIPT"
     chmod +x "$PATCHED_SCRIPT"
 }
@@ -437,6 +442,54 @@ if $has_cn && $has_expiry && $has_upn_line; then
 else
     log_fail "missing output fields (CN=$has_cn, Expiry=$has_expiry, UPN=$has_upn_line)"
     echo "    output: $output"
+fi
+echo ""
+
+# ===================================================================
+# TEST 12: Result file written with PASS on matching cert
+# ===================================================================
+echo "TEST 12: Result file contains PASS on matching cert"
+reset_keychain
+gen_leaf "t12-pass" "digicert" "result-pass" "${HOST_SERIAL}@example.com"
+import_cert "$tmp_dir/t12-pass.pem"
+rm -f "$TEST_RESULT_FILE"
+
+bash "$PATCHED_SCRIPT" >/dev/null 2>&1
+rc=$?
+
+if [ -f "$TEST_RESULT_FILE" ]; then
+    result_content=$(cat "$TEST_RESULT_FILE")
+    if [ "$rc" -eq 0 ] && [ "$result_content" = "PASS:1" ]; then
+        log_pass "result file contains 'PASS:1'"
+    else
+        log_fail "expected PASS:1, got '$result_content' (exit $rc)"
+    fi
+else
+    log_fail "result file not created"
+fi
+echo ""
+
+# ===================================================================
+# TEST 13: Result file written with FAIL on mismatched cert
+# ===================================================================
+echo "TEST 13: Result file contains FAIL on mismatched cert"
+reset_keychain
+gen_leaf "t13-fail" "digicert" "result-fail" "WRONGSERIAL@example.com"
+import_cert "$tmp_dir/t13-fail.pem"
+rm -f "$TEST_RESULT_FILE"
+
+bash "$PATCHED_SCRIPT" >/dev/null 2>&1
+rc=$?
+
+if [ -f "$TEST_RESULT_FILE" ]; then
+    result_content=$(cat "$TEST_RESULT_FILE")
+    if [ "$rc" -eq 1 ] && [ "$result_content" = "FAIL:0:1" ]; then
+        log_pass "result file contains 'FAIL:0:1'"
+    else
+        log_fail "expected FAIL:0:1, got '$result_content' (exit $rc)"
+    fi
+else
+    log_fail "result file not created"
 fi
 echo ""
 

@@ -211,18 +211,43 @@ done
 # ---------------------------------------------------------------------------
 echo "---"
 
+# Determine exit code before writing results
+exit_code=0
+
 if [ "$total" -eq 0 ]; then
     echo "No DigiCert certificates with a UPN found in System keychain."
     echo "RESULT: NOTHING TO CHECK"
-    exit 2
-fi
-
-echo "Summary: $total DigiCert cert(s) with UPN — $matches match, $mismatches mismatch"
-
-if [ "$mismatches" -gt 0 ]; then
+    exit_code=2
+elif [ "$mismatches" -gt 0 ]; then
+    echo "Summary: $total DigiCert cert(s) with UPN — $matches match, $mismatches mismatch"
     echo "RESULT: FAIL — UPN mismatch detected (issue #39324 may still affect this host)"
-    exit 1
+    exit_code=1
+else
+    echo "Summary: $total DigiCert cert(s) with UPN — $matches match, $mismatches mismatch"
+    echo "RESULT: PASS — all UPNs match this host's serial"
 fi
 
-echo "RESULT: PASS — all UPNs match this host's serial"
-exit 0
+# ---------------------------------------------------------------------------
+# Write machine-readable result for Fleet policy integration
+#
+# A Fleet policy can query this file via osquery's file_lines table:
+#   SELECT 1 FROM file_lines
+#   WHERE path = '/var/fleet/upn-check-result'
+#     AND line LIKE 'PASS:%';
+#
+# Format:
+#   PASS:<match_count>              — all DigiCert certs with UPN match
+#   FAIL:<match_count>:<mismatch_count> — at least one mismatch
+#   NONE                            — no DigiCert certs with UPN found
+# ---------------------------------------------------------------------------
+RESULT_DIR="/var/fleet"
+RESULT_FILE="${RESULT_DIR}/upn-check-result"
+if mkdir -p "$RESULT_DIR" 2>/dev/null; then
+    case $exit_code in
+        0) echo "PASS:${matches}" > "$RESULT_FILE" ;;
+        1) echo "FAIL:${matches}:${mismatches}" > "$RESULT_FILE" ;;
+        *) echo "NONE" > "$RESULT_FILE" ;;
+    esac
+fi
+
+exit $exit_code
