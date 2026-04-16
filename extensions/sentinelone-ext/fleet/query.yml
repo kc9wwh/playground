@@ -1,0 +1,26 @@
+---
+apiVersion: v1
+kind: query
+spec:
+  name: SentinelOne agent status
+  description: >-
+    Returns the installed SentinelOne agent's version, ID, health status,
+    management server, and last check-in. Returns no rows when SentinelOne
+    is not installed on the host.
+  query: >-
+    SELECT
+      agent_version,
+      agent_id,
+      status,
+      management_url,
+      site,
+      "group",
+      last_communication,
+      self_protection,
+      network_status,
+      policy_mode,
+      db_version
+    FROM sentinelone_info;
+  platform: darwin,linux,windows
+  interval: 3600
+  observer_can_run: true

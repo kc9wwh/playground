@@ -1,0 +1,18 @@
+---
+apiVersion: v1
+kind: policy
+spec:
+  name: SentinelOne osquery extension is installed
+  description: >-
+    Fails when the sentinelone.ext osquery extension is not loaded on the host.
+    Link this policy to the sentinelone.ext software package in Fleet UI
+    (Policies > this policy > Install software on failure) to automatically
+    deploy the extension to any host that fails.
+  resolution: >-
+    Install the sentinelone.ext osquery extension via Fleet's software
+    deployment. See https://github.com/fleetdm/fleet/issues/36582.
+  platform: darwin,linux,windows
+  query: >-
+    SELECT 1 FROM osquery_extensions
+    WHERE name = 'com.fleetdm.sentinelone_ext'
+    AND type = 'extension';
