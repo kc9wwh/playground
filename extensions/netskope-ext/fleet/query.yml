@@ -1,0 +1,28 @@
+---
+apiVersion: v1
+kind: query
+spec:
+  name: Netskope client state
+  description: >
+    Returns the current Netskope client state, version, tenant, and the
+    silent-degradation flag. Use with scheduled packs for fleet-wide
+    reporting into BigQuery/Looker.
+  query: >
+    SELECT
+      client_version,
+      connection_state,
+      tunnel_status,
+      enabled,
+      disabled_silently,
+      process_running,
+      steering_config,
+      tenant,
+      user_email,
+      last_config_update,
+      policy_version,
+      install_path,
+      error
+    FROM netskope_client;
+  interval: 3600
+  platform: darwin,linux,windows
+  observer_can_run: true
