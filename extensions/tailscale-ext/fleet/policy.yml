@@ -1,0 +1,21 @@
+---
+apiVersion: v1
+kind: policy
+spec:
+  name: Tailscale is connected and running a supported version
+  description: >-
+    Fails on hosts where Tailscale is installed but the backend is not Running,
+    the client is offline, or the version is older than the pinned minimum.
+    Hosts without Tailscale installed return 0 rows from the extension, which
+    this policy treats as non-applicable (the policy passes when there is no
+    row to evaluate — adjust the platform filter or add a separate "Tailscale
+    is installed" policy if you want to flag missing installs).
+  resolution: >-
+    Re-authenticate or reconnect Tailscale on the host, or upgrade to the
+    pinned minimum version. See runbook: https://fleetdm.com/queries/tailscale
+  query: |
+    SELECT 1 FROM tailscale_status
+    WHERE backend_state = 'Running'
+      AND self_online = 1
+      AND version >= '1.78.0';
+  platform: darwin,linux,windows

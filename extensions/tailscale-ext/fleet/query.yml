@@ -1,0 +1,30 @@
+---
+apiVersion: v1
+kind: query
+spec:
+  name: Tailscale status
+  description: >-
+    Reports Tailscale client state for each host: backend state, tailnet,
+    MagicDNS config, self IPs, peer counts, and exit node usage. Requires
+    the tailscale osquery extension to be loaded on the host.
+  query: |
+    SELECT
+      version,
+      backend_state,
+      tailnet_name,
+      magic_dns_suffix,
+      magic_dns_enabled,
+      self_hostname,
+      self_dns_name,
+      self_tailscale_ipv4,
+      self_tailscale_ipv6,
+      self_online,
+      user_login_name,
+      peer_count,
+      active_peer_count,
+      exit_node_in_use,
+      exit_node_hostname
+    FROM tailscale_status;
+  platform: darwin,linux,windows
+  interval: 3600
+  observer_can_run: true
