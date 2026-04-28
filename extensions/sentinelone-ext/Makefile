@@ -1,33 +1,59 @@
 BINARY_NAME := sentinelone.ext
 VERSION := 0.1.0
+BUILD_DIR := build
+
+GO := go
+GOFLAGS := -trimpath
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all clean test vet build build-darwin-amd64 build-darwin-arm64 build-linux-amd64 build-linux-arm64 build-windows-amd64
+.PHONY: all clean test vet build macos macos-amd64 macos-arm64 linux-amd64 linux-arm64 windows-amd64
 
 all: test build
 
 test:
-	go test -v -race ./...
+	$(GO) test -v -race ./...
 
 vet:
-	go vet ./...
+	$(GO) vet ./...
 
-build: build-darwin-amd64 build-darwin-arm64 build-linux-amd64 build-linux-arm64 build-windows-amd64
+build: macos linux-amd64 linux-arm64 windows-amd64
 
-build-darwin-amd64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY_NAME)_darwin_amd64 .
+# macOS universal: build amd64 and arm64, then lipo-merge when on macOS.
+macos: macos-amd64 macos-arm64
+	@if command -v lipo >/dev/null 2>&1; then \
+		mkdir -p $(BUILD_DIR)/darwin-universal; \
+		lipo -create -output $(BUILD_DIR)/darwin-universal/$(BINARY_NAME) \
+			$(BUILD_DIR)/darwin-amd64/$(BINARY_NAME) \
+			$(BUILD_DIR)/darwin-arm64/$(BINARY_NAME); \
+		echo "Built universal binary: $(BUILD_DIR)/darwin-universal/$(BINARY_NAME)"; \
+	else \
+		echo "lipo not available; per-arch macOS binaries in $(BUILD_DIR)/darwin-*"; \
+	fi
 
-build-darwin-arm64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY_NAME)_darwin_arm64 .
+macos-amd64:
+	mkdir -p $(BUILD_DIR)/darwin-amd64
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/darwin-amd64/$(BINARY_NAME) .
 
-build-linux-amd64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY_NAME)_linux_amd64 .
+macos-arm64:
+	mkdir -p $(BUILD_DIR)/darwin-arm64
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/darwin-arm64/$(BINARY_NAME) .
 
-build-linux-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY_NAME)_linux_arm64 .
+linux-amd64:
+	mkdir -p $(BUILD_DIR)/linux-amd64
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/linux-amd64/$(BINARY_NAME) .
 
-build-windows-amd64:
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY_NAME)_windows_amd64.exe .
+linux-arm64:
+	mkdir -p $(BUILD_DIR)/linux-arm64
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/linux-arm64/$(BINARY_NAME) .
+
+windows-amd64:
+	mkdir -p $(BUILD_DIR)/windows-amd64
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" \
+		-o $(BUILD_DIR)/windows-amd64/$(BINARY_NAME).exe .
 
 clean:
-	rm -rf dist/
+	rm -rf $(BUILD_DIR)

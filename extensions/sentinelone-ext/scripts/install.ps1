@@ -10,7 +10,7 @@
     Path to the extension binary (.ext.exe file).
 
 .EXAMPLE
-    .\install.ps1 -BinaryPath .\dist\sentinelone.ext_windows_amd64.exe
+    .\install.ps1 -BinaryPath .\build\windows-amd64\sentinelone.ext.exe
 #>
 
 [CmdletBinding()]

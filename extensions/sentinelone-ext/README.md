@@ -123,23 +123,17 @@ default.
 
 ### Prebuilt binaries (recommended)
 
-Prebuilt binaries for every supported platform are checked in under `dist/`.
+Prebuilt binaries for every supported platform are checked in under `build/`.
 Grab the one matching your host:
 
 | Platform | Binary |
 |---|---|
-| macOS, Apple Silicon | `dist/sentinelone.ext_darwin_arm64` |
-| macOS, Intel | `dist/sentinelone.ext_darwin_amd64` |
-| Linux, x86_64 | `dist/sentinelone.ext_linux_amd64` |
-| Linux, arm64 | `dist/sentinelone.ext_linux_arm64` |
-| Windows, x86_64 | `dist/sentinelone.ext_windows_amd64.exe` |
-
-Verify the download against `dist/SHA256SUMS`:
-
-```bash
-cd dist && sha256sum -c SHA256SUMS     # Linux
-cd dist && shasum -a 256 -c SHA256SUMS # macOS
-```
+| macOS, Universal | `build/darwin-universal/sentinelone.ext` |
+| macOS, Apple Silicon | `build/darwin-arm64/sentinelone.ext` |
+| macOS, Intel | `build/darwin-amd64/sentinelone.ext` |
+| Linux, x86_64 | `build/linux-amd64/sentinelone.ext` |
+| Linux, arm64 | `build/linux-arm64/sentinelone.ext` |
+| Windows, x86_64 | `build/windows-amd64/sentinelone.ext.exe` |
 
 Then skip to [Deployment](#deployment).
 
@@ -159,7 +153,7 @@ cd playground/osquery-tables/sentinelone-ext
 make build
 ```
 
-Rebuilt binaries land in `dist/`, replacing the checked-in ones.
+Rebuilt binaries land in `build/`, replacing the checked-in ones.
 
 ### Run tests
 
@@ -175,13 +169,13 @@ The included `scripts/install.sh` handles copying, permissions,
 `extensions.load`, and orbit restart in one step on macOS and Linux:
 
 ```bash
-sudo ./scripts/install.sh dist/sentinelone.ext_darwin_arm64
+sudo ./scripts/install.sh build/darwin-arm64/sentinelone.ext
 ```
 
 On Windows:
 
 ```powershell
-.\scripts\install.ps1 -BinaryPath .\dist\sentinelone.ext_windows_amd64.exe
+.\scripts\install.ps1 -BinaryPath .\build\windows-amd64\sentinelone.ext.exe
 ```
 
 ### Option B: Manual deployment
@@ -189,7 +183,7 @@ On Windows:
 #### macOS
 
 ```bash
-sudo cp dist/sentinelone.ext_darwin_arm64 /usr/local/bin/sentinelone.ext
+sudo cp build/darwin-arm64/sentinelone.ext /usr/local/bin/sentinelone.ext
 sudo chown root:wheel /usr/local/bin/sentinelone.ext
 sudo chmod 755 /usr/local/bin/sentinelone.ext
 echo "/usr/local/bin/sentinelone.ext" | sudo tee -a /var/osquery/extensions.load
@@ -200,7 +194,7 @@ sudo launchctl start com.fleetdm.orbit
 #### Linux
 
 ```bash
-sudo cp dist/sentinelone.ext_linux_amd64 /usr/local/bin/sentinelone.ext
+sudo cp build/linux-amd64/sentinelone.ext /usr/local/bin/sentinelone.ext
 sudo chown root:root /usr/local/bin/sentinelone.ext
 sudo chmod 755 /usr/local/bin/sentinelone.ext
 echo "/usr/local/bin/sentinelone.ext" | sudo tee -a /var/osquery/extensions.load
@@ -210,7 +204,7 @@ sudo systemctl restart orbit
 #### Windows (PowerShell as Administrator)
 
 ```powershell
-Copy-Item dist\sentinelone.ext_windows_amd64.exe "C:\Program Files\osquery\sentinelone.ext.exe"
+Copy-Item build\windows-amd64\sentinelone.ext.exe "C:\Program Files\osquery\sentinelone.ext.exe"
 Add-Content "C:\Program Files\osquery\extensions.load" "C:\Program Files\osquery\sentinelone.ext.exe"
 Restart-Service "Fleet osquery"
 ```
@@ -253,7 +247,7 @@ This is the recommended approach for rolling the extension out to a fleet.
 1. Build: `make build`.
 2. Launch orbit with the extension attached:
    ```bash
-   sudo orbit shell -- --extension ./dist/sentinelone.ext_darwin_arm64
+   sudo orbit shell -- --extension ./build/darwin-arm64/sentinelone.ext
    ```
 3. At the osquery prompt, verify registration:
    ```sql
