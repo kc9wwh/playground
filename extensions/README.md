@@ -76,23 +76,35 @@ Use these steps to verify an extension on a single host before deploying to your
 
 ### Option A: orbit shell (recommended for fleetd hosts)
 
-If the host has Fleet's agent (orbit) installed, attach one or more extensions to an interactive osquery shell:
+If the host has Fleet's agent (orbit) installed, attach an extension to an interactive osquery shell:
 
 ```bash
-# Single extension
 sudo orbit shell -- --extension ./sentinelone-ext/build/darwin-arm64/sentinelone.ext
-
-# Multiple extensions (repeat the --extension flag)
-sudo orbit shell -- \
-  --extension ./sentinelone-ext/build/darwin-arm64/sentinelone.ext \
-  --extension ./netskope-ext/build/darwin-arm64/netskope.ext \
-  --extension ./tailscale-ext/build/darwin-arm64/tailscale.ext
 ```
+
+> **Note:** The `--extension` flag only loads a single extension. Passing it multiple times only loads the last one listed. To test multiple extensions simultaneously, use an `extensions.load` file (see below).
+
+#### Loading multiple extensions
+
+Create a temporary `extensions.load` file listing one absolute path per line, then pass it with `--extensions_autoload`:
+
+```bash
+# Create a temporary extensions.load file
+cat > /tmp/test-extensions.load <<EOF
+/full/path/to/sentinelone-ext/build/darwin-arm64/sentinelone.ext
+/full/path/to/netskope-ext/build/darwin-arm64/netskope.ext
+/full/path/to/tailscale-ext/build/darwin-arm64/tailscale.ext
+EOF
+
+sudo orbit shell -- --extensions_autoload=/tmp/test-extensions.load --extensions_timeout=30
+```
+
+> **Important:** The `--extensions_timeout=30` flag is required. It controls both how long osqueryd waits for extensions to register and the `--timeout` value passed to each extension binary. Without it, extensions default to a 3-second socket timeout and fail with `context deadline exceeded` if the orbit shell socket is not ready yet.
 
 Then verify each table:
 
 ```sql
--- Confirm the extension registered
+-- Confirm the extensions registered
 SELECT name, type FROM osquery_extensions WHERE type = 'extension';
 
 -- Query the tables
@@ -106,8 +118,14 @@ SELECT * FROM tailscale_status;
 If you have osquery installed without Fleet:
 
 ```bash
+# Single extension
 osqueryi --extension ./sentinelone-ext/build/darwin-arm64/sentinelone.ext
+
+# Multiple extensions (reuse the extensions.load file from Option A)
+osqueryi --extensions_autoload=/tmp/test-extensions.load
 ```
+
+> `osqueryi` manages its own extension socket lifecycle, so `--extensions_timeout` is not needed here.
 
 ### What to verify
 
@@ -218,6 +236,51 @@ SELECT computer_name, name
 FROM osquery_extensions
 WHERE name = 'com.fleetdm.sentinelone_ext';
 ```
+
+## Extension permissions
+
+osquery's watchdog verifies that extension binaries have safe file permissions before loading them. If permissions are wrong, osquery logs a warning and refuses to load the extension:
+
+```
+Extension binary has unsafe permissions: /path/to/extension.ext
+```
+
+### Requirements
+
+| Check | Required value | Why |
+|---|---|---|
+| Owner | `root` (UID 0) on macOS/Linux | osquery runs as root and requires extensions to be owned by root or the running user |
+| Group | `wheel` (macOS) / `root` (Linux) | Standard system group for root-owned binaries |
+| Mode | `755` (`rwxr-xr-x`) or stricter | Must not be group-writable or world-writable |
+
+### Setting permissions
+
+```bash
+# macOS
+sudo chown root:wheel /path/to/extension.ext
+sudo chmod 755 /path/to/extension.ext
+
+# Linux
+sudo chown root:root /path/to/extension.ext
+sudo chmod 755 /path/to/extension.ext
+```
+
+For all extensions in this repo at once:
+
+```bash
+# macOS
+sudo chown -R root:wheel sentinelone-ext/build/ netskope-ext/build/ tailscale-ext/build/
+# Linux
+sudo chown -R root:root sentinelone-ext/build/ netskope-ext/build/ tailscale-ext/build/
+```
+
+### After rebuilding
+
+`go build` creates binaries owned by your user, not root. You must re-run `chown` after every rebuild before loading the extension into osquery.
+
+### macOS extended attributes
+
+On macOS Sequoia and later, binaries may acquire an immutable `com.apple.provenance` extended attribute. This attribute alone does not prevent osquery from loading the extension — the ownership and mode checks above are what matter. If you see the `@` flag in `ls -la` output, it can be ignored as long as ownership and mode are correct.
 
 ## Troubleshooting
 
