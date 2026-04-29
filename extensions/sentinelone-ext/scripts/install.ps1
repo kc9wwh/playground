@@ -73,4 +73,4 @@ try {
 Write-Host ""
 Write-Host "==> Done. Verify with:"
 Write-Host '    orbit.exe shell'
-Write-Host '    osquery> SELECT * FROM sentinelone_info;'
+Write-Host '    osquery> SELECT * FROM sentinelone;'

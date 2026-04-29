@@ -20,7 +20,7 @@ spec:
       network_status,
       policy_mode,
       db_version
-    FROM sentinelone_info;
+    FROM sentinelone;
   platform: darwin,linux,windows
   interval: 3600
   observer_can_run: true

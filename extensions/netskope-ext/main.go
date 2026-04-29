@@ -1,5 +1,5 @@
 // Package main implements a standalone osquery extension that exposes the
-// netskope_client table. It is designed to be loaded by osqueryd via the
+// netskope table. It is designed to be loaded by osqueryd via the
 // extensions.load mechanism used by Fleet's orbit agent.
 package main
 
@@ -42,7 +42,7 @@ func main() {
 	}
 
 	server.RegisterPlugin(table.NewPlugin(
-		"netskope_client",
+		"netskope",
 		NetskopeClientColumns(),
 		func(ctx context.Context, qc table.QueryContext) ([]map[string]string, error) {
 			return NetskopeClientGenerate(ctx, qc)

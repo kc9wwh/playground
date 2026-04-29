@@ -42,7 +42,7 @@ func main() {
 	}
 
 	server.RegisterPlugin(table.NewPlugin(
-		"sentinelone_info",
+		"sentinelone",
 		SentinelOneInfoColumns(),
 		SentinelOneInfoGenerate,
 	))

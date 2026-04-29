@@ -14,7 +14,7 @@ spec:
     Re-authenticate or reconnect Tailscale on the host, or upgrade to the
     pinned minimum version. See runbook: https://fleetdm.com/queries/tailscale
   query: |
-    SELECT 1 FROM tailscale_status
+    SELECT 1 FROM tailscale
     WHERE backend_state = 'Running'
       AND self_online = 1
       AND version >= '1.78.0';

@@ -1,7 +1,7 @@
 # tailscale osquery extension
 
 A standalone osquery extension that exposes the local Tailscale client state as
-a SQL table named `tailscale_status`. Built for fleetdm/fleet
+a SQL table named `tailscale`. Built for fleetdm/fleet
 [issue #43630](https://github.com/fleetdm/fleet/issues/43630) so customers can
 ship Tailscale visibility today without waiting on in-product table support.
 
@@ -10,7 +10,7 @@ beyond the osquery extension socket and the local `tailscale` CLI.
 
 ## Table schema
 
-`tailscale_status` returns **one row per host** when Tailscale is installed,
+`tailscale` returns **one row per host** when Tailscale is installed,
 and **zero rows** when it is not. The single-row shape means policies can
 distinguish "not installed" (no row) from "installed but broken"
 (`backend_state != 'Running'`).
@@ -105,7 +105,7 @@ Use Fleet's script/policy feature to deliver the binary and register it:
 Before shipping to production, verify on at least one host per target OS:
 
 1. **Fresh install, no Tailscale present**
-   - Run `SELECT * FROM tailscale_status;`
+   - Run `SELECT * FROM tailscale;`
    - Expect zero rows. Check osquery logs for no errors.
 2. **Tailscale installed but logged out**
    - `sudo tailscale logout`

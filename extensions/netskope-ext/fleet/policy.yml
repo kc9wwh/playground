@@ -6,13 +6,13 @@ spec:
   description: >
     Fails when the Netskope agent process is running but the client has entered
     a disabled or degraded state — the silent-failure mode described in
-    fleetdm/fleet#43629. Requires the netskope_client extension to be deployed.
+    fleetdm/fleet#43629. Requires the netskope extension to be deployed.
   resolution: >
     Log in to the Netskope client UI and confirm it is connected. If the icon
     is grayed out, restart the STAgent service. If the issue persists, contact
     the Netskope administrator to reissue enrollment.
   query: >
-    SELECT 1 FROM netskope_client
+    SELECT 1 FROM netskope
     WHERE disabled_silently = 0
       AND (error = '' OR error IS NULL);
   platform: darwin,linux,windows
@@ -28,5 +28,5 @@ spec:
   resolution: >
     Deploy the Netskope STAgent MSI/PKG to this host.
   query: >
-    SELECT 1 FROM netskope_client WHERE install_path != '';
+    SELECT 1 FROM netskope WHERE install_path != '';
   platform: darwin,linux,windows

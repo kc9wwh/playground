@@ -1,4 +1,4 @@
-module github.com/fleetdm/netskope_client-ext
+module github.com/fleetdm/netskope-ext
 
 go 1.26
 

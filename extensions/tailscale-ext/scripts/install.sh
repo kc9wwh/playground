@@ -56,4 +56,4 @@ echo "Restarting orbit..."
   exit 1
 }
 
-echo "Done. Query with: SELECT * FROM tailscale_status;"
+echo "Done. Query with: SELECT * FROM tailscale;"

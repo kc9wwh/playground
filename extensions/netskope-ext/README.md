@@ -1,6 +1,6 @@
-# netskope_client osquery extension
+# netskope osquery extension
 
-Standalone osquery extension that adds a `netskope_client` table for querying
+Standalone osquery extension that adds a `netskope` table for querying
 Netskope STAgent state, version, and steering configuration on macOS, Linux,
 and Windows endpoints. Designed to be deployed via Fleet's orbit agent while
 the in-product Fleet table tracked by [fleetdm/fleet#43629][issue] is in
@@ -145,7 +145,7 @@ You should see a "registered extension" log line referencing
 From Fleet (or `osqueryi --extension`):
 
 ```sql
-SELECT * FROM netskope_client;
+SELECT * FROM netskope;
 ```
 
 Expected output on a healthy host:
@@ -217,7 +217,7 @@ Apply with `fleetctl apply -f fleet/policy.yml` and
 
 - The exact flags accepted by `nstdiag` drift between Netskope releases. The
   extension tries `-s -j` then falls back to `-s`. If a future release
-  removes both, update `defaultRunNstdiag` in `table_netskope_client.go`.
+  removes both, update `defaultRunNstdiag` in `table_netskope.go`.
 - `nsbranding.json` field names come from publicly-documented Netskope
   deployment material; field names may differ on older clients. Additional
   fallback keys can be added to `nsbrandingConfig` as needed.

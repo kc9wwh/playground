@@ -14,7 +14,7 @@ import (
 	"github.com/osquery/osquery-go/plugin/table"
 )
 
-// NetskopeClientColumns describes the netskope_client table schema.
+// NetskopeClientColumns describes the netskope table schema.
 // All columns are exposed as TEXT — osquery handles coercion from the column
 // type, and keeping a single Go type (string) simplifies the Generate path.
 func NetskopeClientColumns() []table.ColumnDefinition {

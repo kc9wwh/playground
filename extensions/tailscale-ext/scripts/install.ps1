@@ -43,4 +43,4 @@ Write-Host "Registered in $ExtensionsLoad"
 Write-Host "Restarting Fleet osquery service..."
 
 Restart-Service -Name "Fleet osquery" -Force
-Write-Host "Done. Query with: SELECT * FROM tailscale_status;"
+Write-Host "Done. Query with: SELECT * FROM tailscale;"

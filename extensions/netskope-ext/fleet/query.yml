@@ -22,7 +22,7 @@ spec:
       policy_version,
       install_path,
       error
-    FROM netskope_client;
+    FROM netskope;
   interval: 3600
   platform: darwin,linux,windows
   observer_can_run: true

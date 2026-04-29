@@ -1,6 +1,6 @@
 // Package main is the entry point for the tailscale osquery extension.
 //
-// The extension registers a single table, `tailscale_status`, which exposes
+// The extension registers a single table, `tailscale`, which exposes
 // the local Tailscale client state (backend state, tailnet, MagicDNS,
 // self IPs, peer counts, exit node) by shelling out to `tailscale status
 // --json` on the host.
@@ -41,7 +41,7 @@ func main() {
 	}
 
 	server.RegisterPlugin(table.NewPlugin(
-		"tailscale_status",
+		"tailscale",
 		TailscaleStatusColumns(),
 		TailscaleStatusGenerate,
 	))

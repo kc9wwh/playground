@@ -34,7 +34,7 @@ var runSentinelctl = func(ctx context.Context, args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
-// SentinelOneInfoColumns returns the schema for the sentinelone_info table.
+// SentinelOneInfoColumns returns the schema for the sentinelone table.
 func SentinelOneInfoColumns() []table.ColumnDefinition {
 	return []table.ColumnDefinition{
 		table.TextColumn("agent_version"),

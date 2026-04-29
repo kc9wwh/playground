@@ -8,9 +8,9 @@ Deploy one extension or all of them — they are fully independent and can be mi
 
 | Extension | Table name | What it exposes | Docs |
 |---|---|---|---|
-| [sentinelone-ext](sentinelone-ext/) | `sentinelone_info` | SentinelOne agent version, status, management server, policy mode | [README](sentinelone-ext/README.md) |
-| [netskope-ext](netskope-ext/) | `netskope_client` | Netskope client state, tunnel status, silent-degradation detection | [README](netskope-ext/README.md) |
-| [tailscale-ext](tailscale-ext/) | `tailscale_status` | Tailscale backend state, tailnet, peer counts, exit node usage | [README](tailscale-ext/README.md) |
+| [sentinelone-ext](sentinelone-ext/) | `sentinelone` | SentinelOne agent version, status, management server, policy mode | [README](sentinelone-ext/README.md) |
+| [netskope-ext](netskope-ext/) | `netskope` | Netskope client state, tunnel status, silent-degradation detection | [README](netskope-ext/README.md) |
+| [tailscale-ext](tailscale-ext/) | `tailscale` | Tailscale backend state, tailnet, peer counts, exit node usage | [README](tailscale-ext/README.md) |
 
 ## Prebuilt binaries
 
@@ -108,9 +108,9 @@ Then verify each table:
 SELECT name, type FROM osquery_extensions WHERE type = 'extension';
 
 -- Query the tables
-SELECT * FROM sentinelone_info;
-SELECT * FROM netskope_client;
-SELECT * FROM tailscale_status;
+SELECT * FROM sentinelone;
+SELECT * FROM netskope;
+SELECT * FROM tailscale;
 ```
 
 ### Option B: standalone osqueryi
@@ -219,7 +219,7 @@ You don't have to deploy every extension to every host. Use Fleet's team-scoping
 
 - **Scope policies to teams** — only hosts in that team evaluate the policy and receive the software.
 - **Upload packages per team** — Fleet's software feature supports team-level assignment.
-- **Different extensions per team** — e.g. engineering gets `tailscale_status`, security gets `sentinelone_info`, everyone gets `netskope_client`.
+- **Different extensions per team** — e.g. engineering gets `tailscale`, security gets `sentinelone`, everyone gets `netskope`.
 
 ## Verifying a deployment
 

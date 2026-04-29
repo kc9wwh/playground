@@ -8,7 +8,7 @@
 
 ## Table schema
 
-### `sentinelone_info`
+### `sentinelone`
 
 | Column | Type | Description |
 |---|---|---|
@@ -26,14 +26,14 @@
 
 Rows: exactly one row when SentinelOne is installed; zero rows when it is
 not. The extension never returns an error to osquery for a missing or
-misbehaving agent — `SELECT * FROM sentinelone_info` always succeeds.
+misbehaving agent — `SELECT * FROM sentinelone` always succeeds.
 
 ## Example queries
 
 ### Show SentinelOne status on a single host
 
 ```sql
-SELECT * FROM sentinelone_info;
+SELECT * FROM sentinelone;
 ```
 
 ### All hosts: is SentinelOne installed and healthy?
@@ -43,7 +43,7 @@ SELECT
   COUNT(*) > 0 AS installed,
   MAX(CASE WHEN status = 'Loaded' THEN 1 ELSE 0 END) AS loaded,
   MAX(CASE WHEN network_status = 'Connected' THEN 1 ELSE 0 END) AS connected
-FROM sentinelone_info;
+FROM sentinelone;
 ```
 
 ### Policy: SentinelOne must be loaded and connected
@@ -51,7 +51,7 @@ FROM sentinelone_info;
 Use this as the query body of a Fleet policy:
 
 ```sql
-SELECT 1 FROM sentinelone_info
+SELECT 1 FROM sentinelone
 WHERE status = 'Loaded'
   AND network_status = 'Connected';
 ```
@@ -60,7 +60,7 @@ WHERE status = 'Loaded'
 
 ```sql
 SELECT agent_version, agent_id
-FROM sentinelone_info
+FROM sentinelone
 WHERE agent_version < '23.0.0';
 ```
 
@@ -98,7 +98,7 @@ as at least one field was populated. If `sentinelctl version` itself fails
 `sentinelctl` prints plain-text key/value lines (`Key: Value`). The extension
 normalizes keys to lower-snake-case and picks the first non-empty value from
 a list of candidates per column. If your environment's `sentinelctl` uses
-different labels than the ones listed in `table_sentinelone_info.go`, the
+different labels than the ones listed in `table_sentinelone.go`, the
 column will come back empty — open an issue with a sample of the output and
 we'll extend the candidate list.
 
@@ -259,7 +259,7 @@ This is the recommended approach for rolling the extension out to a fleet.
 
 1. In the same shell:
    ```sql
-   SELECT * FROM sentinelone_info;
+   SELECT * FROM sentinelone;
    ```
 2. **Expected:** one row. Spot-check:
    - `agent_version` matches `sudo sentinelctl version` on the host.
@@ -273,7 +273,7 @@ This is the recommended approach for rolling the extension out to a fleet.
 1. On a host without SentinelOne installed (or rename `sentinelctl` aside),
    run:
    ```sql
-   SELECT * FROM sentinelone_info;
+   SELECT * FROM sentinelone;
    ```
 2. **Expected:** zero rows, no error. The extension must not crash orbit
    and `SELECT * FROM osquery_extensions` should still show it loaded.
@@ -284,7 +284,7 @@ This is the recommended approach for rolling the extension out to a fleet.
 2. Wait ~30 seconds for orbit to restart and reload extensions.
 3. From Fleet UI, run a live query against the host:
    ```sql
-   SELECT * FROM sentinelone_info;
+   SELECT * FROM sentinelone;
    ```
 4. **Expected:** results appear in the Fleet query results panel.
 
@@ -310,7 +310,7 @@ This is the recommended approach for rolling the extension out to a fleet.
 
 ## Troubleshooting
 
-### `no such table: sentinelone_info`
+### `no such table: sentinelone`
 
 The extension is not loaded. Check, in order:
 
@@ -320,7 +320,7 @@ The extension is not loaded. Check, in order:
 4. Did orbit restart after the change? (`sudo systemctl status orbit` on Linux.)
 5. `SELECT * FROM osquery_extensions;` — does the extension show up at all?
 
-### Extension loads but `sentinelone_info` is empty
+### Extension loads but `sentinelone` is empty
 
 1. Is SentinelOne actually installed and running? Check `sudo sentinelctl status`.
 2. Does `sudo sentinelctl version` succeed as root on the host?
@@ -331,7 +331,7 @@ The extension is not loaded. Check, in order:
 
 Different SentinelOne agent versions label fields slightly differently.
 Capture the relevant `sentinelctl` output and open an issue — we can extend
-the field candidates in `table_sentinelone_info.go` without a schema change.
+the field candidates in `table_sentinelone.go` without a schema change.
 
 ### Extension timeout on orbit startup
 

@@ -24,7 +24,7 @@ spec:
       active_peer_count,
       exit_node_in_use,
       exit_node_hostname
-    FROM tailscale_status;
+    FROM tailscale;
   platform: darwin,linux,windows
   interval: 3600
   observer_can_run: true

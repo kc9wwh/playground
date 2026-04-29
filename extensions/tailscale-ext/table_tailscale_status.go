@@ -89,7 +89,7 @@ func TailscaleStatusColumns() []table.ColumnDefinition {
 }
 
 // TailscaleStatusGenerate is the row generator osquery calls for every query
-// against tailscale_status. It always returns a single row when Tailscale is
+// against the tailscale table. It always returns a single row when Tailscale is
 // installed — even if the backend is Stopped or NeedsLogin — so that policies
 // can distinguish "not installed" (zero rows) from "installed but broken"
 // (one row with backend_state != "Running").

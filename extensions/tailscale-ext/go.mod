@@ -1,4 +1,4 @@
-module github.com/fleetdm/tailscale_status-ext
+module github.com/fleetdm/tailscale-ext
 
 go 1.26
 
