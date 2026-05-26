@@ -21,7 +21,7 @@ This extension combines three signals into one row:
 1. `nstdiag` output (authoritative connection/tunnel state).
 2. Netskope config files on disk (tenant, steering config, policy version).
 3. A process-presence check (agent actually running).
-
+****
 The combination surfaces the silent-degradation case as
 `disabled_silently = 1`.
 
