@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -183,11 +184,11 @@ Client version:: 117.1.0.1234.
 `)
 	s := parseNstdiagText(input)
 	checks := map[string]string{
-		"client_version":   "000.111.222.333",
+		"client_version":   "117.1.0.1234",
 		"client_status":    "enable",
 		"tunnel_status":    "NSTUNNEL_CONNECTED",
 		"orgname":          "CompanyName",
-		"tenant_url":       "companyname.goskope.com",
+		"tenant_url":       "CompanyName.goskope.com",
 		"steering_config":  "Default tenant config",
 		"email":            "alice@acme.example",
 		"addonhost":        "addon-companyname.goskope.com",
@@ -242,14 +243,18 @@ func (f fakeFileInfo) IsDir() bool        { return f.isDir }
 func (f fakeFileInfo) Sys() any           { return nil }
 
 func TestFindInstallPath_PrefersCandidateWithBinary(t *testing.T) {
-	candidates := []string{
-		`C:\Program Files\Netskope\STAgent`,
-		`C:\Program Files (x86)\Netskope\STAgent`,
-	}
+	// Build paths with filepath.Join + nsdiagBinaryName() so the test matches
+	// what findInstallPath computes under any runtime.GOOS (forward slashes on
+	// unix, "nsdiag" vs "nsdiag.exe").
+	dir1 := filepath.Join("Program Files", "Netskope", "STAgent")
+	dir2 := filepath.Join("Program Files (x86)", "Netskope", "STAgent")
+	bin1 := filepath.Join(dir1, nsdiagBinaryName())
+
+	candidates := []string{dir1, dir2}
 	paths := map[string]fakeFileInfo{
-		`C:\Program Files\Netskope\STAgent`:             {isDir: true},
-		`C:\Program Files\Netskope\STAgent\nsdiag.exe`:  {isDir: false},
-		`C:\Program Files (x86)\Netskope\STAgent`:       {isDir: true},
+		dir1: {isDir: true},
+		bin1: {isDir: false},
+		dir2: {isDir: true},
 	}
 
 	got := findInstallPath(candidates, func(path string) (os.FileInfo, error) {
@@ -259,15 +264,16 @@ func TestFindInstallPath_PrefersCandidateWithBinary(t *testing.T) {
 		return nil, os.ErrNotExist
 	})
 
-	if got != `C:\Program Files\Netskope\STAgent` {
-		t.Fatalf("expected Program Files install path, got %q", got)
+	if got != dir1 {
+		t.Fatalf("expected install path %q, got %q", dir1, got)
 	}
 }
 
 func TestFindInstallPath_FallsBackToExistingDirectory(t *testing.T) {
-	candidates := []string{`C:\Program Files\Netskope\STAgent`}
+	dir := filepath.Join("Program Files", "Netskope", "STAgent")
+	candidates := []string{dir}
 	paths := map[string]fakeFileInfo{
-		`C:\Program Files\Netskope\STAgent`: {isDir: true},
+		dir: {isDir: true},
 	}
 
 	got := findInstallPath(candidates, func(path string) (os.FileInfo, error) {
@@ -277,7 +283,7 @@ func TestFindInstallPath_FallsBackToExistingDirectory(t *testing.T) {
 		return nil, os.ErrNotExist
 	})
 
-	if got != `C:\Program Files\Netskope\STAgent` {
-		t.Fatalf("expected fallback install path, got %q", got)
+	if got != dir {
+		t.Fatalf("expected fallback install path %q, got %q", dir, got)
 	}
 }

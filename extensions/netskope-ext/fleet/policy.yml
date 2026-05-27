@@ -2,10 +2,10 @@
 apiVersion: v1
 kind: policy
 spec:
-  name: Netskope client is enabled and not silently degraded
+  name: Netskope client is enabled and connected
   description: >
-    Fails when the Netskope agent process is running but the client has entered
-    a disabled or degraded state — the silent-failure mode described in
+    Fails when the Netskope client is not reporting an enabled status with a
+    connected tunnel — the disabled/degraded mode described in
     fleetdm/fleet#43629. Requires the netskope extension to be deployed.
   resolution: >
     Log in to the Netskope client UI and confirm it is connected. If the icon
@@ -13,7 +13,8 @@ spec:
     the Netskope administrator to reissue enrollment.
   query: >
     SELECT 1 FROM netskope
-    WHERE disabled_silently = 0
+    WHERE client_status = 'enable'
+      AND tunnel_status = 'NSTUNNEL_CONNECTED'
       AND (error = '' OR error IS NULL);
   platform: darwin,linux,windows
 ---
