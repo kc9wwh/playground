@@ -14,62 +14,63 @@ Netskope can enter a silently-degraded state: the menubar/tray icon goes gray,
 but the STAgent process and system extensions still look healthy from the
 outside. Existing osquery checks against process state or kext/system
 extension presence miss this failure mode. The only reliable signal is the
-state reported by Netskope's own `nstdiag` diagnostic tool.
+state reported by Netskope's own `nsdiag` diagnostic tool.
 
-This extension combines three signals into one row:
-
-1. `nstdiag` output (authoritative connection/tunnel state).
-2. Netskope config files on disk (tenant, steering config, policy version).
-3. A process-presence check (agent actually running).
-
-The combination surfaces the silent-degradation case as
-`disabled_silently = 1`.
+This extension surfaces the connection/tunnel state and configuration that
+`nsdiag -f` reports as a single row, so policies can alert when
+`client_status` and `tunnel_status` no longer indicate a healthy, connected
+tunnel.
 
 ## Schema
 
-| Column | Type | Description |
-| --- | --- | --- |
-| `client_version` | TEXT | Netskope client version reported by `nstdiag`. |
-| `connection_state` | TEXT | `enabled`, `disabled`, `degraded`, or `unknown`. |
-| `tunnel_status` | TEXT | `up`, `down`, or `unknown`. |
-| `enabled` | INTEGER | `1` when `connection_state = enabled` AND `tunnel_status = up`. |
-| `disabled_silently` | INTEGER | `1` when `process_running = 1` but `enabled = 0`. The silent-failure case. |
-| `process_running` | INTEGER | `1` when the STAgent process is alive. |
-| `steering_config` | TEXT | Active steering configuration name. |
-| `tenant` | TEXT | Netskope tenant/org name. |
-| `user_email` | TEXT | Enrolled user. |
-| `last_config_update` | TEXT | RFC3339 timestamp of the last config pull (from `nsconfig.json` mtime). |
-| `policy_version` | TEXT | Active policy version. |
-| `install_path` | TEXT | Detected STAgent install directory. |
-| `error` | TEXT | Populated when the extension cannot produce data (e.g. Netskope not installed, nstdiag failure). |
+Every column maps directly to a field from `nsdiag -f` output (lowercased,
+spaces replaced with underscores). `install_path` and `error` are added for
+operational diagnostics. All columns are `TEXT`.
+
+| Column | Description |
+| --- | --- |
+| `orgname` | Netskope tenant/org name. |
+| `tenant_url` | Tenant URL (e.g. `company.goskope.com`). |
+| `addonhost` | Addon host endpoint. |
+| `addoncheckerhost` | Addon checker host endpoint. |
+| `gateway` | Gateway hostname. |
+| `gateway_ip` | Gateway IP address. |
+| `config` | Active client configuration name. |
+| `steering_config` | Active steering configuration name. |
+| `email` | Enrolled user email. |
+| `peruser_config` | Whether per-user config is enabled. |
+| `tunnel_status` | Tunnel state, e.g. `NSTUNNEL_CONNECTED`. |
+| `client_status` | Client state, e.g. `enable`. |
+| `dynamic_steering` | Whether dynamic steering is enabled. |
+| `onpremdetection` | On-prem detection state. |
+| `explicit_proxy` | Whether explicit proxy is enabled. |
+| `tunnel_protocol` | Tunnel protocol, e.g. `TLS`. |
+| `sni_enable` | Whether SNI is enabled. |
+| `traffic_mode` | Traffic steering mode, e.g. `All Traffic`. |
+| `client_version` | Netskope client version. |
+| `install_path` | Detected STAgent install directory. |
+| `error` | Populated when the extension cannot produce data (e.g. Netskope not installed, `nsdiag` failure). |
 
 The table always returns exactly one row. If Netskope is not installed, that
-row has `error = "netskope client not installed"` and zero/empty columns.
+row has `error = "netskope client not installed"` and empty columns.
 
 ## Data source
 
-The extension pulls data from three places on the endpoint:
-
-- **`nstdiag` binary**, located under the STAgent install directory. The
-  extension tries `nstdiag -s -j` first (JSON output, newer builds) and falls
-  back to `nstdiag -s` (plain-text key/value output).
-- **`nsbranding.json`** in the install directory, parsed for `tenantName`,
-  `steeringConfigName`, `userEmail`, and `policyVersion`.
-- **`nsconfig.json`** mtime as a proxy for "last time the client pulled
-  config".
-- **Process table** (`pgrep` / `tasklist`) to detect whether STAgent is alive.
+The extension runs the `nsdiag` binary located under the STAgent install
+directory with the `-f` flag and parses its `Key:: Value.` plain-text output.
+Boolean-valued fields are normalized to `TRUE`/`FALSE`.
 
 Install-path candidates:
 
 | Platform | Path |
 | --- | --- |
 | macOS | `/Library/Application Support/Netskope/STAgent` |
-| Windows | `C:\Program Files (x86)\Netskope\STAgent` (also checks `Program Files`) |
+| Windows | `C:\Program Files\Netskope\STAgent` (also checks `Program Files (x86)`) |
 | Linux | `/opt/netskope/stagent` (also checks `/opt/Netskope/STAgent`) |
 
-If `nstdiag` invocation fails (permissions, flag changed in a newer release,
-etc.) the extension still returns config-file-derived data and records the
-failure in the `error` column rather than bubbling an error up to osquery.
+If `nsdiag` invocation fails (permissions, flag changed in a newer release,
+etc.) the extension records the failure in the `error` column rather than
+bubbling an error up to osquery.
 
 ## Build
 
@@ -150,22 +151,19 @@ SELECT * FROM netskope;
 
 Expected output on a healthy host:
 
-- `enabled = 1`
-- `disabled_silently = 0`
-- `connection_state = "enabled"`
-- `tunnel_status = "up"`
+- `client_status = "enable"`
+- `tunnel_status = "NSTUNNEL_CONNECTED"`
 - `client_version` populated
-- `tenant`, `steering_config` populated
+- `orgname`, `tenant_url`, `steering_config` populated
 - `error = ""`
 
-### 4. Silent-degradation path (the important one)
+### 4. Degradation path (the important one)
 
 Reproduce by disabling Netskope through the tray UI while leaving the process
 running — the customer has seen this in the wild. Then requery:
 
-- `process_running = 1`
-- `enabled = 0`
-- `disabled_silently = 1`
+- `client_status` no longer `enable` and/or `tunnel_status` no longer
+  `NSTUNNEL_CONNECTED`.
 
 This is the condition policies should alert on.
 
@@ -177,35 +175,34 @@ On a host without Netskope:
 - `error = "netskope client not installed"`
 - No panic, no errored row.
 
-### 6. nstdiag-failure path
+### 6. nsdiag-failure path
 
-Temporarily make `nstdiag` unreadable:
+Temporarily make `nsdiag` unreadable:
 
 ```sh
-sudo chmod 000 "/Library/Application Support/Netskope/STAgent/nstdiag"
+sudo chmod 000 "/Library/Application Support/Netskope/STAgent/nsdiag"
 ```
 
 Requery:
 
 - `error` contains `"nstdiag failed: ..."`.
-- `tenant` / `steering_config` still populated from `nsbranding.json`.
 
 Restore permissions after the test:
 
 ```sh
-sudo chmod 755 "/Library/Application Support/Netskope/STAgent/nstdiag"
+sudo chmod 755 "/Library/Application Support/Netskope/STAgent/nsdiag"
 ```
 
 ### 7. Confirm deployment via Fleet policies
 
 Apply `fleet/policy.yml` to a team and wait one osquery cycle. The
-silent-degradation policy should pass on healthy hosts and fail on any host
-where Netskope is silently disabled.
+connection-health policy should pass on healthy hosts and fail on any host
+where Netskope is disabled or disconnected.
 
 ## Fleet deployment artifacts
 
-- `fleet/policy.yml` — two policies: one that alerts on silent degradation,
-  one that alerts on hosts missing the Netskope client.
+- `fleet/policy.yml` — two policies: one that alerts when the client is not
+  enabled and connected, one that alerts on hosts missing the Netskope client.
 - `fleet/query.yml` — scheduled query returning the full row every hour.
   Suitable for feeding a BigQuery/Looker pipeline for unified compliance
   reporting.
@@ -215,12 +212,11 @@ Apply with `fleetctl apply -f fleet/policy.yml` and
 
 ## Notes and caveats
 
-- The exact flags accepted by `nstdiag` drift between Netskope releases. The
-  extension tries `-s -j` then falls back to `-s`. If a future release
-  removes both, update `defaultRunNstdiag` in `table_netskope.go`.
-- `nsbranding.json` field names come from publicly-documented Netskope
-  deployment material; field names may differ on older clients. Additional
-  fallback keys can be added to `nsbrandingConfig` as needed.
+- The exact flags and field names accepted/reported by `nsdiag` drift between
+  Netskope releases. The extension runs `nsdiag -f` and maps known fields to
+  columns via `nstdiagKeyToColumn` in `table_netskope_client.go`. If a future
+  release renames fields or changes the flag, update that map and
+  `defaultRunNstdiag`.
 - This extension is intentionally conservative about privileges — it does not
-  attempt to run `nstdiag -z` (the full bundle collector) because that writes
+  attempt to run `nsdiag -z` (the full bundle collector) because that writes
   large files to disk. It only reads state.
