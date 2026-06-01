@@ -1,5 +1,7 @@
 BINARY_NAME := sentinelone.ext
-VERSION := 0.1.0
+# Version is the build timestamp in UTC: YYYYMMDD-HHMMSS. Recomputed every
+# `make` invocation, so each build gets a unique, sortable identifier.
+VERSION := $(shell date -u +%Y%m%d-%H%M%S)
 BUILD_DIR := build
 
 GO := go
@@ -57,9 +59,9 @@ windows-amd64:
 
 # Set root:wheel ownership and 755 mode required by osquery's extension loader.
 # Must run as root (or via sudo make sign).
-sign:
-	sudo chown -R root:wheel $(BUILD_DIR)
-	sudo chmod -R 755 $(BUILD_DIR)
+#sign:
+#	sudo chown -R root:wheel $(BUILD_DIR)
+#	sudo chmod -R 755 $(BUILD_DIR)
 
 clean:
 	rm -rf $(BUILD_DIR)

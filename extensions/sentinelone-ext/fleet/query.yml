@@ -11,15 +11,17 @@ spec:
     SELECT
       agent_version,
       agent_id,
-      status,
-      management_url,
-      site,
-      "group",
-      last_communication,
-      self_protection,
-      network_status,
-      policy_mode,
-      db_version
+      install_date,
+      operational_state,
+      protection,
+      ready,
+      infected,
+      network_quarantine,
+      compatible_os,
+      management_server,
+      management_site_key,
+      management_last_seen,
+      management_connected
     FROM sentinelone;
   platform: darwin,linux,windows
   interval: 3600
