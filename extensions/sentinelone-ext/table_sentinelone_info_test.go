@@ -205,6 +205,47 @@ func TestSentinelOneInfoGenerate_UnparseableOutput(t *testing.T) {
 	}
 }
 
+func TestSentinelOneInfoGenerate_UnparseableDateCleared(t *testing.T) {
+	// Valid status output but with a garbage date that can't be parsed as a
+	// timestamp. The epoch column must be cleared ("") rather than retaining
+	// the raw text, which would break SQL numeric comparisons.
+	cleanup := setRunSentinelctl(t, func(args []string) ([]byte, error) {
+		return []byte(
+			"Agent\n" +
+				"   Version:      25.3.4.8365\n" +
+				"   ID:           abc-123\n" +
+				"   Install Date: not-a-date\n" +
+				"Management\n" +
+				"   Last Seen:    also-garbage\n" +
+				"   Connected:    yes\n",
+		), nil
+	})
+	defer cleanup()
+
+	rows, err := SentinelOneInfoGenerate(context.Background(), table.QueryContext{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	row := rows[0]
+
+	if row["install_date"] != "" {
+		t.Errorf("install_date should be cleared on parse failure, got %q", row["install_date"])
+	}
+	if row["management_last_seen"] != "" {
+		t.Errorf("management_last_seen should be cleared on parse failure, got %q", row["management_last_seen"])
+	}
+	// Non-epoch columns should still be populated.
+	if row["agent_version"] != "25.3.4.8365" {
+		t.Errorf("agent_version = %q, want %q", row["agent_version"], "25.3.4.8365")
+	}
+	if row["management_connected"] != "yes" {
+		t.Errorf("management_connected = %q, want %q", row["management_connected"], "yes")
+	}
+}
+
 func TestSentinelOneInfoGenerate_PartialOutput(t *testing.T) {
 	// Only the Management section is present; everything else missing.
 	cleanup := setRunSentinelctl(t, func(args []string) ([]byte, error) {

@@ -179,11 +179,14 @@ func SentinelOneInfoGenerate(
 	}
 
 	// Normalize timestamp columns to Unix epoch seconds. If parsing fails the
-	// original textual value is left in place so the data isn't lost.
+	// column is cleared so SQL numeric comparisons (e.g. WHERE install_date <
+	// 1700000000) aren't broken by mixed-format values.
 	for _, col := range epochColumns {
 		if v := row[col]; v != "" {
 			if epoch, ok := toUnixEpoch(v); ok {
 				row[col] = epoch
+			} else {
+				row[col] = ""
 			}
 		}
 	}
@@ -244,6 +247,12 @@ func toUnixEpoch(s string) (string, bool) {
 // tokenises on slashes, colons and any run of whitespace/comma, so it
 // accepts non-breaking spaces and irregular padding that defeat the strict
 // time.Parse layouts.
+//
+// LIMITATION: The parser assumes US-style M/D/Y field order. On hosts whose
+// locale emits D/M/Y, dates where day > 12 will fail the month range check
+// (atoiRange 1–12) and the epoch column will be cleared rather than silently
+// storing an incorrect timestamp. Auto-detection between M/D and D/M is not
+// feasible when day <= 12, so we document rather than guess.
 func parseLocaleShortDateTime(s string) (time.Time, bool) {
 	// Split on anything that isn't a digit or a letter.
 	fields := strings.FieldsFunc(s, func(r rune) bool {

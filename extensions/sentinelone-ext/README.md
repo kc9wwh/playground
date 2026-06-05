@@ -132,12 +132,19 @@ produces no recognized fields, the extension returns zero rows.
 
 ### Output parsing
 
-`sentinelctl` prints plain-text key/value lines (`Key: Value`). The extension
-normalizes keys to lower-snake-case and picks the first non-empty value from
-a list of candidates per column. If your environment's `sentinelctl` uses
-different labels than the ones listed in `table_sentinelone.go`, the
-column will come back empty — open an issue with a sample of the output and
-we'll extend the candidate list.
+`sentinelctl status` prints hierarchical, indentation-structured text. The
+extension normalizes section + key paths to lower-snake-case and maps them to
+columns via `columnPathMap` in `table_sentinelone_info.go`. If your
+environment's `sentinelctl` uses different labels than the ones in that map,
+the column will come back empty — open an issue with a sample of the output
+and we'll add the mapping.
+
+**Timestamp columns** (`install_date`, `management_last_seen`) are converted
+to Unix epoch seconds. The parser supports ISO 8601, RFC 3339, and the
+US-locale short form (`M/D/YY, H:MM:SS AM`) emitted by macOS. On hosts whose
+locale emits D/M/Y order, dates where the day field exceeds 12 will fail
+parsing and the column will be returned empty rather than storing an incorrect
+value. Ambiguous dates (day ≤ 12) are interpreted as M/D/Y.
 
 ### Required privileges
 

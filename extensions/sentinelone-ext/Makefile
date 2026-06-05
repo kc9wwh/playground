@@ -59,9 +59,9 @@ windows-amd64:
 
 # Set root:wheel ownership and 755 mode required by osquery's extension loader.
 # Must run as root (or via sudo make sign).
-#sign:
-#	sudo chown -R root:wheel $(BUILD_DIR)
-#	sudo chmod -R 755 $(BUILD_DIR)
+sign:
+	sudo chown -R root:wheel $(BUILD_DIR)
+	sudo chmod -R 755 $(BUILD_DIR)
 
 clean:
 	rm -rf $(BUILD_DIR)
