@@ -1,5 +1,7 @@
 BINARY_NAME := sentinelone.ext
-VERSION := 0.1.0
+# Version is the build timestamp in UTC: YYYYMMDD-HHMMSS. Recomputed every
+# `make` invocation, so each build gets a unique, sortable identifier.
+VERSION := $(shell date -u +%Y%m%d-%H%M%S)
 BUILD_DIR := build
 
 GO := go

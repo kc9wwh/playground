@@ -10,23 +10,57 @@
 
 ### `sentinelone`
 
-| Column | Type | Description |
-|---|---|---|
-| `agent_version` | TEXT | Installed SentinelOne agent version (e.g. `23.2.4.7`). |
-| `agent_id` | TEXT | Unique agent UUID reported by `sentinelctl agent_id`. |
-| `status` | TEXT | Agent state as reported by `sentinelctl status` (e.g. `Loaded`, `Disabled`). |
-| `management_url` | TEXT | Management console URL the agent is registered to. |
-| `site` | TEXT | SentinelOne Site the host belongs to. |
-| `group` | TEXT | SentinelOne Group the host belongs to. |
-| `last_communication` | TEXT | Most recent successful communication with the management console. |
-| `self_protection` | TEXT | Anti-tampering / self-protection state (`On` / `Off`). |
-| `network_status` | TEXT | Agent's view of connectivity to the management server (e.g. `Connected`). |
-| `policy_mode` | TEXT | Operational mode (e.g. `Detect`, `Protect`). |
-| `db_version` | TEXT | Signatures / static AI DB version, when reported. |
+All columns are flattened from the hierarchical output of `sentinelctl status`.
+Section names from that output are used as column prefixes (`service_*`,
+`integrity_*`, `launchd_*`, `management_*`) where needed for uniqueness.
 
-Rows: exactly one row when SentinelOne is installed; zero rows when it is
-not. The extension never returns an error to osquery for a missing or
-misbehaving agent — `SELECT * FROM sentinelone` always succeeds.
+| Column | Type | Source path in `sentinelctl status` |
+|---|---|---|
+| `agent_version` | TEXT | `Agent > Version` |
+| `agent_id` | TEXT | `Agent > ID` |
+| `install_date` | TEXT | `Agent > Install Date` (Unix epoch seconds, host local time) |
+| `es_framework` | TEXT | `Agent > ES Framework` |
+| `operational_state` | TEXT | `Agent > Agent Operational State` |
+| `remote_profiler` | TEXT | `Agent > Remote Profiler` |
+| `network_monitoring` | TEXT | `Agent > Agent Network Monitoring` |
+| `network_extension` | TEXT | `Agent > Network Extension` |
+| `network_extension_content_filter` | TEXT | `Agent > Network Extension Content Filter` |
+| `ready` | TEXT | `Agent > Ready` |
+| `protection` | TEXT | `Agent > Protection` |
+| `infected` | TEXT | `Agent > Infected` |
+| `network_quarantine` | TEXT | `Agent > Network Quarantine` |
+| `compatible_os` | TEXT | `Agent > Compatible OS` |
+| `command_authentication` | TEXT | `Command > Authentication` |
+| `service_agent_helper` | TEXT | `Daemons > Services > Agent Helper` |
+| `service_agent_ui` | TEXT | `Daemons > Services > Agent UI` |
+| `service_cleaner` | TEXT | `Daemons > Services > Cleaner` |
+| `service_control_service` | TEXT | `Daemons > Services > Control Service` |
+| `service_framework` | TEXT | `Daemons > Services > Framework` |
+| `service_guard` | TEXT | `Daemons > Services > Guard` |
+| `service_helper_service` | TEXT | `Daemons > Services > Helper Service` |
+| `service_lib_hooks_service` | TEXT | `Daemons > Services > Lib Hooks Service` |
+| `service_lib_logs_service` | TEXT | `Daemons > Services > Lib Logs Service` |
+| `service_shell` | TEXT | `Daemons > Services > Shell` |
+| `integrity_sentineld` | TEXT | `Daemons > Integrity > sentineld` |
+| `integrity_sentineld_guard` | TEXT | `Daemons > Integrity > sentineld_guard` |
+| `integrity_sentineld_helper` | TEXT | `Daemons > Integrity > sentineld_helper` |
+| `integrity_sentineld_shell` | TEXT | `Daemons > Integrity > sentineld_shell` |
+| `launchd_agent_helper` | TEXT | `Launchd > agent-helper` |
+| `launchd_agent_ui` | TEXT | `Launchd > agent-ui` |
+| `launchd_sentinel_extensions` | TEXT | `Launchd > sentinel-extensions` |
+| `launchd_sentineld` | TEXT | `Launchd > sentineld` |
+| `launchd_sentineld_guard` | TEXT | `Launchd > sentineld-guard` |
+| `launchd_sentineld_helper` | TEXT | `Launchd > sentineld-helper` |
+| `launchd_sentineld_shell` | TEXT | `Launchd > sentineld-shell` |
+| `management_server` | TEXT | `Management > Server` |
+| `management_site_key` | TEXT | `Management > Site Key` |
+| `management_last_seen` | TEXT | `Management > Last Seen` (Unix epoch seconds, host local time) |
+| `management_connected` | TEXT | `Management > Connected` |
+
+Rows: exactly one row when SentinelOne is installed and `sentinelctl status`
+produced at least one recognized field; zero rows otherwise. The extension
+never returns an error to osquery for a missing or misbehaving agent —
+`SELECT * FROM sentinelone` always succeeds.
 
 ## Example queries
 
@@ -41,19 +75,19 @@ SELECT * FROM sentinelone;
 ```sql
 SELECT
   COUNT(*) > 0 AS installed,
-  MAX(CASE WHEN status = 'Loaded' THEN 1 ELSE 0 END) AS loaded,
-  MAX(CASE WHEN network_status = 'Connected' THEN 1 ELSE 0 END) AS connected
+  MAX(CASE WHEN protection = 'enabled' THEN 1 ELSE 0 END) AS protected,
+  MAX(CASE WHEN management_connected = 'yes' THEN 1 ELSE 0 END) AS connected
 FROM sentinelone;
 ```
 
-### Policy: SentinelOne must be loaded and connected
+### Policy: SentinelOne must be protected and connected
 
 Use this as the query body of a Fleet policy:
 
 ```sql
 SELECT 1 FROM sentinelone
-WHERE status = 'Loaded'
-  AND network_status = 'Connected';
+WHERE protection = 'enabled'
+  AND management_connected = 'yes';
 ```
 
 ### Find hosts running an old SentinelOne agent
@@ -61,29 +95,32 @@ WHERE status = 'Loaded'
 ```sql
 SELECT agent_version, agent_id
 FROM sentinelone
-WHERE agent_version < '23.0.0';
+WHERE agent_version < '25.0.0';
 ```
 
 ## Data source
 
 ### How it works
 
-The extension shells out to the SentinelOne `sentinelctl` CLI on the local
-host and parses its text output. All invocations time out after 15 seconds
-and run from the osquery process, which runs as root under fleetd.
+The extension shells out to `sentinelctl status` on the local host and parses
+its hierarchical, indentation-structured text output into a single flat row.
+The invocation times out after 15 seconds and runs from the osquery process,
+which runs as root under fleetd.
 
 | Subcommand | Columns populated |
 |---|---|
-| `sentinelctl version` | `agent_version`, `db_version` |
-| `sentinelctl agent_id` | `agent_id` |
-| `sentinelctl status` | `status`, `self_protection` |
-| `sentinelctl management status` | `management_url`, `site`, `group`, `last_communication`, `network_status` |
-| `sentinelctl config show` | `policy_mode` |
+| `sentinelctl status` | all columns |
 
-Any subcommand that fails individually is treated as "not available" — the
-corresponding columns come back empty, but the row is still returned as long
-as at least one field was populated. If `sentinelctl version` itself fails
-(or the binary is not found at all), the extension returns zero rows.
+Parsing is structural: top-level section names (`Agent`, `Command`,
+`Daemons`, `Launchd`, `Management`) and nested sub-sections (`Services`,
+`Integrity`) are tracked by indentation, and each leaf `Key: Value` line is
+keyed by its full section path before being mapped to a column. Lines whose
+labels aren't in the mapping are silently ignored, so new fields added by
+future SentinelOne releases won't crash the extension — they simply won't
+appear until added to `columnPathMap` in `table_sentinelone_info.go`.
+
+If `sentinelctl status` itself fails (or the binary is not found), or if it
+produces no recognized fields, the extension returns zero rows.
 
 ### Platform-specific details
 
@@ -95,12 +132,19 @@ as at least one field was populated. If `sentinelctl version` itself fails
 
 ### Output parsing
 
-`sentinelctl` prints plain-text key/value lines (`Key: Value`). The extension
-normalizes keys to lower-snake-case and picks the first non-empty value from
-a list of candidates per column. If your environment's `sentinelctl` uses
-different labels than the ones listed in `table_sentinelone.go`, the
-column will come back empty — open an issue with a sample of the output and
-we'll extend the candidate list.
+`sentinelctl status` prints hierarchical, indentation-structured text. The
+extension normalizes section + key paths to lower-snake-case and maps them to
+columns via `columnPathMap` in `table_sentinelone_info.go`. If your
+environment's `sentinelctl` uses different labels than the ones in that map,
+the column will come back empty — open an issue with a sample of the output
+and we'll add the mapping.
+
+**Timestamp columns** (`install_date`, `management_last_seen`) are converted
+to Unix epoch seconds. The parser supports ISO 8601, RFC 3339, and the
+US-locale short form (`M/D/YY, H:MM:SS AM`) emitted by macOS. On hosts whose
+locale emits D/M/Y order, dates where the day field exceeds 12 will fail
+parsing and the column will be returned empty rather than storing an incorrect
+value. Ambiguous dates (day ≤ 12) are interpreted as M/D/Y.
 
 ### Required privileges
 
