@@ -141,10 +141,19 @@ var columnOrder = []string{
 	"management_connected",
 }
 
+func activeColumnOrder() []string {
+	return columnOrder
+}
+
+func activeColumnPathMap() map[string]string {
+	return columnPathMap
+}
+
 // SentinelOneInfoColumns returns the schema for the sentinelone table.
 func SentinelOneInfoColumns() []table.ColumnDefinition {
-	cols := make([]table.ColumnDefinition, 0, len(columnOrder))
-	for _, name := range columnOrder {
+	order := activeColumnOrder()
+	cols := make([]table.ColumnDefinition, 0, len(order))
+	for _, name := range order {
 		cols = append(cols, table.TextColumn(name))
 	}
 	return cols
@@ -157,8 +166,11 @@ func SentinelOneInfoGenerate(
 	ctx context.Context,
 	queryContext table.QueryContext,
 ) ([]map[string]string, error) {
-	row := make(map[string]string, len(columnOrder))
-	for _, name := range columnOrder {
+	order := activeColumnOrder()
+	pathMap := activeColumnPathMap()
+
+	row := make(map[string]string, len(order))
+	for _, name := range order {
 		row[name] = ""
 	}
 
@@ -168,9 +180,11 @@ func SentinelOneInfoGenerate(
 	}
 
 	parsed := parseSentinelctlStatus(string(out))
+	applyWindowsStatusAliases(parsed)
+	applyWindowsCanonicalMappings(parsed)
 	populated := false
 	for path, val := range parsed {
-		col, ok := columnPathMap[path]
+		col, ok := pathMap[path]
 		if !ok {
 			continue
 		}
@@ -195,6 +209,133 @@ func SentinelOneInfoGenerate(
 		return []map[string]string{}, nil
 	}
 	return []map[string]string{row}, nil
+}
+
+// applyWindowsStatusAliases maps Windows `sentinelctl status` keys into the
+// same normalized key space used by the macOS/Linux hierarchical output.
+//
+// Example Windows lines:
+//   Disable State: Not disabled by the user
+//   SentinelNetworkMonitor is loaded
+//   Self-Protection status: On
+//   Monitor Build id: 25.1.4.434+...
+func applyWindowsStatusAliases(parsed map[string]string) {
+	// Canonicalize Windows "<Thing> is <state>" keys into the explicit
+	// requested table column names.
+	if v := strings.TrimSpace(parsed["sentinelmonitor_is_loaded"]); v != "" {
+		parsed["sentinel_monitor_is_loaded"] = v
+	}
+	if v := strings.TrimSpace(parsed["sentinelnetworkmonitor_is_loaded"]); v != "" {
+		parsed["sentinel_network_monitor_is_loaded"] = v
+	}
+	if v := strings.TrimSpace(parsed["sentinelagent_is_loaded"]); v != "" {
+		parsed["sentinel_agent_is_loaded"] = v
+	}
+	if v := strings.TrimSpace(parsed["sentinelagent_is_running"]); v != "" {
+		parsed["sentinel_agent_is_running"] = v
+	}
+
+	// Backward-compatible fallbacks in case predicate parsing format changes.
+	if v := strings.TrimSpace(parsed["sentinelmonitor"]); v != "" && parsed["sentinel_monitor_is_loaded"] == "" {
+		parsed["sentinel_monitor_is_loaded"] = v
+	}
+	if v := strings.TrimSpace(parsed["sentinelnetworkmonitor"]); v != "" && parsed["sentinel_network_monitor_is_loaded"] == "" {
+		parsed["sentinel_network_monitor_is_loaded"] = v
+	}
+	if v := strings.TrimSpace(parsed["sentinelagent"]); v != "" {
+		low := strings.ToLower(v)
+		if strings.HasPrefix(low, "loaded") && parsed["sentinel_agent_is_loaded"] == "" {
+			parsed["sentinel_agent_is_loaded"] = v
+		}
+		if strings.HasPrefix(low, "running") && parsed["sentinel_agent_is_running"] == "" {
+			parsed["sentinel_agent_is_running"] = v
+		}
+	}
+}
+
+// applyWindowsCanonicalMappings projects Windows-only sentinelctl fields into
+// canonical macOS/Linux path keys so all platforms can share one schema.
+func applyWindowsCanonicalMappings(parsed map[string]string) {
+	if v := extractVersionPrefix(parsed["monitor_build_id"]); v != "" {
+		parsed["agent_version"] = v
+	}
+
+	if v := strings.TrimSpace(parsed["disable_state"]); v != "" {
+		low := strings.ToLower(v)
+		switch {
+		case strings.Contains(low, "not disabled"):
+			parsed["agent_agent_operational_state"] = "enabled"
+		case strings.Contains(low, "disabled"):
+			parsed["agent_agent_operational_state"] = "disabled"
+		default:
+			parsed["agent_agent_operational_state"] = "unknown"
+		}
+	}
+
+	if v := strings.TrimSpace(parsed["self_protection_status"]); v != "" {
+		low := strings.ToLower(v)
+		switch low {
+		case "on", "enabled":
+			parsed["agent_protection"] = "enabled"
+		case "off", "disabled":
+			parsed["agent_protection"] = "disabled"
+		default:
+			parsed["agent_protection"] = "unknown"
+		}
+	}
+
+	if v := strings.TrimSpace(parsed["sentinel_network_monitor_is_loaded"]); v != "" {
+		parsed["agent_agent_network_monitoring"] = normalizeLoadedState(v)
+	}
+
+	if v := strings.TrimSpace(parsed["sentinel_monitor_is_loaded"]); v != "" {
+		parsed["agent_es_framework"] = normalizeLoadedState(v)
+	}
+
+	if v := strings.TrimSpace(parsed["sentinel_agent_is_running"]); v != "" {
+		if strings.HasPrefix(strings.ToLower(v), "running") {
+			parsed["agent_ready"] = "yes"
+		} else {
+			parsed["agent_ready"] = "no"
+		}
+	}
+}
+
+func normalizeLoadedState(v string) string {
+	low := strings.ToLower(strings.TrimSpace(v))
+	switch {
+	case strings.HasPrefix(low, "loaded"), strings.HasPrefix(low, "running"), strings.HasPrefix(low, "started"):
+		return "started"
+	case strings.HasPrefix(low, "not loaded"), strings.HasPrefix(low, "stopped"):
+		return "stopped"
+	default:
+		return "unknown"
+	}
+}
+
+// extractVersionPrefix returns the leading dot-separated numeric version from
+// s, e.g. "25.1.4.434+build" -> "25.1.4.434".
+func extractVersionPrefix(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	end := 0
+	for _, r := range s {
+		if (r >= '0' && r <= '9') || r == '.' {
+			end++
+			continue
+		}
+		break
+	}
+	if end == 0 {
+		return ""
+	}
+	v := strings.Trim(s[:end], ".")
+	if v == "" || !strings.Contains(v, ".") {
+		return ""
+	}
+	return v
 }
 
 // epochColumns lists the columns whose values are timestamps and should be
@@ -358,6 +499,21 @@ func parseSentinelctlStatus(out string) map[string]string {
 
 		idx := strings.Index(trimmed, ":")
 		if idx <= 0 {
+			// Windows status output includes flat lines like
+			// "SentinelAgent is loaded".
+			if key, val, ok := parseIsPredicateLine(trimmed); ok {
+				parts := make([]string, 0, len(stack)+1)
+				for _, f := range stack {
+					parts = append(parts, f.name)
+				}
+				parts = append(parts, key)
+				path := strings.Join(parts, "_")
+				if _, exists := result[path]; !exists {
+					result[path] = val
+				}
+				continue
+			}
+
 			// No colon -> section header at this indent.
 			name := normalizeKey(trimmed)
 			if name != "" {
@@ -387,6 +543,30 @@ func parseSentinelctlStatus(out string) map[string]string {
 		}
 	}
 	return result
+}
+
+// parseIsPredicateLine parses a line in the form "<key> is <value>" (case
+// insensitive for the separator) and returns normalized key and trimmed value.
+func parseIsPredicateLine(line string) (string, string, bool) {
+	lower := strings.ToLower(line)
+	idx := strings.Index(lower, " is ")
+	if idx <= 0 {
+		return "", "", false
+	}
+	base := normalizeKey(line[:idx])
+	val := strings.TrimSpace(line[idx+4:])
+	if base == "" || val == "" {
+		return "", "", false
+	}
+
+	key := base
+	valKey := normalizeKey(val)
+	if strings.HasPrefix(valKey, "loaded") {
+		key = base + "_is_loaded"
+	} else if strings.HasPrefix(valKey, "running") {
+		key = base + "_is_running"
+	}
+	return key, val, true
 }
 
 // leadingSpaces counts leading ASCII spaces / tabs on a line.

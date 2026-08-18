@@ -10,9 +10,11 @@
 
 ### `sentinelone`
 
-All columns are flattened from the hierarchical output of `sentinelctl status`.
-Section names from that output are used as column prefixes (`service_*`,
-`integrity_*`, `launchd_*`, `management_*`) where needed for uniqueness.
+All columns are flattened from the hierarchical output of `sentinelctl status`. Section names from that output are used as column prefixes (`service_*`, `integrity_*`, `launchd_*`, `management_*`) where needed for uniqueness.
+
+The table schema is the same on macOS, Linux, and Windows.
+On Windows, `sentinelctl status` currently exposes fewer fields, so columns without a direct Windows source are returned as empty strings.
+The Linux build exists, but it has not been validated yet. For production reporting, exclude Linux clients from SentinelOne result queries until Linux validation is complete.
 
 | Column | Type | Source path in `sentinelctl status` |
 |---|---|---|
@@ -57,10 +59,7 @@ Section names from that output are used as column prefixes (`service_*`,
 | `management_last_seen` | TEXT | `Management > Last Seen` (Unix epoch seconds, host local time) |
 | `management_connected` | TEXT | `Management > Connected` |
 
-Rows: exactly one row when SentinelOne is installed and `sentinelctl status`
-produced at least one recognized field; zero rows otherwise. The extension
-never returns an error to osquery for a missing or misbehaving agent —
-`SELECT * FROM sentinelone` always succeeds.
+Rows: exactly one row when SentinelOne is installed and `sentinelctl status` produced at least one recognized field; zero rows otherwise. The extension never returns an error to osquery for a missing or misbehaving agent — `SELECT * FROM sentinelone` always succeeds.
 
 ## Example queries
 
@@ -78,6 +77,17 @@ SELECT
   MAX(CASE WHEN protection = 'enabled' THEN 1 ELSE 0 END) AS protected,
   MAX(CASE WHEN management_connected = 'yes' THEN 1 ELSE 0 END) AS connected
 FROM sentinelone;
+```
+
+### Exclude Linux clients from Fleet results (recommended)
+
+Use this pattern for mixed-platform fleets until Linux validation is complete:
+
+```sql
+SELECT s.*
+FROM sentinelone s
+CROSS JOIN os_version o
+WHERE lower(o.platform) != 'linux';
 ```
 
 ### Policy: SentinelOne must be protected and connected
@@ -139,6 +149,13 @@ environment's `sentinelctl` uses different labels than the ones in that map,
 the column will come back empty — open an issue with a sample of the output
 and we'll add the mapping.
 
+On Windows, `sentinelctl status` is flatter and includes predicate-style lines
+such as `SentinelAgent is loaded`. Those values are first normalized and then
+projected into the same canonical columns used on macOS/Linux (for example,
+`agent_version`, `operational_state`, `protection`, `network_monitoring`,
+`ready`, `es_framework`) so cross-platform Fleet queries can target one table
+shape.
+
 **Timestamp columns** (`install_date`, `management_last_seen`) are converted
 to Unix epoch seconds. The parser supports ISO 8601, RFC 3339, and the
 US-locale short form (`M/D/YY, H:MM:SS AM`) emitted by macOS. On hosts whose
@@ -159,8 +176,8 @@ default.
 |---|---|---|
 | macOS | arm64 (Apple Silicon) | Supported |
 | macOS | amd64 (Intel) | Supported |
-| Linux | amd64 | Supported |
-| Linux | arm64 | Supported |
+| Linux | amd64 | Not tested |
+| Linux | arm64 | Not tested |
 | Windows | amd64 | Supported |
 
 ## Getting the binary

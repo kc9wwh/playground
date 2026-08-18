@@ -63,6 +63,16 @@ Management
    Connected:                              yes
 `
 
+const sampleWindowsStatusOutput = `Disable State: Not disabled by the user
+SentinelMonitor is loaded
+Self-Protection status: On
+Monitor Build id: 25.1.4.434+8d4abf01154f6752-Release.x64
+SentinelNetworkMonitor is loaded
+SentinelAgent is loaded
+SentinelAgent is running as PPL
+Mitigation policy: none
+`
+
 // setRunSentinelctl swaps the global command runner for a mock and returns a
 // cleanup func.
 func setRunSentinelctl(t *testing.T, fn func(args []string) ([]byte, error)) func() {
@@ -76,16 +86,35 @@ func setRunSentinelctl(t *testing.T, fn func(args []string) ([]byte, error)) fun
 
 func TestSentinelOneInfoColumns(t *testing.T) {
 	cols := SentinelOneInfoColumns()
-	if len(cols) != len(columnOrder) {
-		t.Fatalf("expected %d columns, got %d", len(columnOrder), len(cols))
+	expectedOrder := columnOrder
+	if len(cols) != len(expectedOrder) {
+		t.Fatalf("expected %d columns, got %d", len(expectedOrder), len(cols))
 	}
 	for i, c := range cols {
-		if c.Name != columnOrder[i] {
-			t.Errorf("column[%d]: got %q, want %q", i, c.Name, columnOrder[i])
+		if c.Name != expectedOrder[i] {
+			t.Errorf("column[%d]: got %q, want %q", i, c.Name, expectedOrder[i])
 		}
 		if c.Type != table.ColumnTypeText {
 			t.Errorf("column %s: expected TEXT, got %v", c.Name, c.Type)
 		}
+	}
+}
+
+
+func TestActiveColumnOrder_FullSchemaAllPlatforms(t *testing.T) {
+	got := activeColumnOrder()
+	if len(got) != len(columnOrder) {
+		t.Fatalf("activeColumnOrder len=%d, want %d", len(got), len(columnOrder))
+	}
+	for i := range columnOrder {
+		if got[i] != columnOrder[i] {
+			t.Fatalf("activeColumnOrder[%d]=%q, want %q", i, got[i], columnOrder[i])
+		}
+	}
+
+	activeMap := activeColumnPathMap()
+	if len(activeMap) != len(columnPathMap) {
+		t.Fatalf("activeColumnPathMap len=%d, want %d", len(activeMap), len(columnPathMap))
 	}
 }
 
@@ -275,6 +304,50 @@ func TestSentinelOneInfoGenerate_PartialOutput(t *testing.T) {
 	}
 }
 
+func TestSentinelOneInfoGenerate_WindowsStatusOutput(t *testing.T) {
+	cleanup := setRunSentinelctl(t, func(args []string) ([]byte, error) {
+		if len(args) != 1 || args[0] != "status" {
+			return nil, errors.New("unexpected args")
+		}
+		return []byte(sampleWindowsStatusOutput), nil
+	})
+	defer cleanup()
+
+	rows, err := SentinelOneInfoGenerate(context.Background(), table.QueryContext{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	row := rows[0]
+
+	if len(row) != len(columnOrder) {
+		t.Fatalf("row has %d columns, want %d", len(row), len(columnOrder))
+	}
+	if row["agent_version"] != "25.1.4.434" {
+		t.Errorf("agent_version = %q", row["agent_version"])
+	}
+	if row["operational_state"] != "enabled" {
+		t.Errorf("operational_state = %q", row["operational_state"])
+	}
+	if row["protection"] != "enabled" {
+		t.Errorf("protection = %q", row["protection"])
+	}
+	if row["network_monitoring"] != "started" {
+		t.Errorf("network_monitoring = %q", row["network_monitoring"])
+	}
+	if row["ready"] != "yes" {
+		t.Errorf("ready = %q", row["ready"])
+	}
+	if row["es_framework"] != "started" {
+		t.Errorf("es_framework = %q", row["es_framework"])
+	}
+	if row["management_server"] != "" {
+		t.Errorf("management_server expected empty, got %q", row["management_server"])
+	}
+}
+
 func TestParseSentinelctlStatus_NestedSections(t *testing.T) {
 	got := parseSentinelctlStatus(sampleStatusOutput)
 
@@ -312,6 +385,34 @@ func TestParseSentinelctlStatus_ValueWithColons(t *testing.T) {
 	}
 	if got["management_last_seen"] != "6/1/26, 1:14:28 PM" {
 		t.Errorf("management_last_seen = %q", got["management_last_seen"])
+	}
+}
+
+func TestParseSentinelctlStatus_WindowsOutput(t *testing.T) {
+	got := parseSentinelctlStatus(sampleWindowsStatusOutput)
+	cases := map[string]string{
+		"disable_state":                    "Not disabled by the user",
+		"sentinelmonitor_is_loaded":        "loaded",
+		"self_protection_status":           "On",
+		"monitor_build_id":                 "25.1.4.434+8d4abf01154f6752-Release.x64",
+		"sentinelnetworkmonitor_is_loaded": "loaded",
+		"sentinelagent_is_loaded":          "loaded",
+		"sentinelagent_is_running":         "running as PPL",
+		"mitigation_policy":                "none",
+	}
+	for k, want := range cases {
+		if got[k] != want {
+			t.Errorf("parsed[%q] = %q, want %q", k, got[k], want)
+		}
+	}
+}
+
+func TestExtractVersionPrefix(t *testing.T) {
+	if got := extractVersionPrefix("25.1.4.434+8d4abf01154f6752-Release.x64"); got != "25.1.4.434" {
+		t.Errorf("extractVersionPrefix = %q", got)
+	}
+	if got := extractVersionPrefix("x25.1.4"); got != "" {
+		t.Errorf("extractVersionPrefix invalid prefix = %q", got)
 	}
 }
 
